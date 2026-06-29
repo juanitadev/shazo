@@ -1,9 +1,5 @@
 package net.teppan.shazo.shell;
 
-import net.teppan.shazo.Command;
-import net.teppan.shazo.NoOpCommand;
-import net.teppan.shazo.jdbc.SqlCommand;
-import net.teppan.shazo.shell.ShellCommand;
 import net.teppan.shazo.Describer;
 import net.teppan.shazo.Producer;
 import net.teppan.shazo.ShazoException;
@@ -33,11 +29,11 @@ class ShellRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        Describer<Line> describer = Describer.<Line>builder()
+        Describer<Line, ShellCommand> describer = Describer.<Line, ShellCommand>builder()
             .contains(l -> List.of(ShellCommand.of("sh", "-c",
                 "echo " + l.text() + " | wc -l")))
-            .store  (l -> List.of(NoOpCommand.INSTANCE))
-            .delete (l -> List.of(NoOpCommand.INSTANCE))
+            .store  (l -> List.of())
+            .delete (l -> List.of())
             .retrieve(l -> List.of(ShellCommand.of("sh", "-c",
                 "printf '%s' '" + l.text() + "'")))
             .catalog (l -> List.of(ShellCommand.of("sh", "-c",
@@ -65,10 +61,10 @@ class ShellRepositoryTest {
     @Test
     void retrieveEmptyOutputReturnsEmpty() throws ShazoException {
         // "true" exits 0 with no output; result has no rows → verifier returns false → Optional.empty()
-        Describer<Line> noOutputDescriber = Describer.<Line>builder()
-            .contains(l -> List.of(NoOpCommand.INSTANCE))
-            .store   (l -> List.of(NoOpCommand.INSTANCE))
-            .delete  (l -> List.of(NoOpCommand.INSTANCE))
+        Describer<Line, ShellCommand> noOutputDescriber = Describer.<Line, ShellCommand>builder()
+            .contains(l -> List.of())
+            .store   (l -> List.of())
+            .delete  (l -> List.of())
             .retrieve(l -> List.of(ShellCommand.of("sh", "-c", "true")))
             .catalog (l -> List.of(ShellCommand.of("sh", "-c", "true")))
             .infuser(result -> new Line(""))
@@ -84,11 +80,11 @@ class ShellRepositoryTest {
     @Test
     void catalogReturnsMultipleLines() throws ShazoException {
         // sh -c "printf '%s\n' a b c" prints a, b, c on separate lines
-        Describer<Line> multiDescriber = Describer.<Line>builder()
-            .contains(l -> List.of(NoOpCommand.INSTANCE))
-            .store   (l -> List.of(NoOpCommand.INSTANCE))
-            .delete  (l -> List.of(NoOpCommand.INSTANCE))
-            .retrieve(l -> List.of(NoOpCommand.INSTANCE))
+        Describer<Line, ShellCommand> multiDescriber = Describer.<Line, ShellCommand>builder()
+            .contains(l -> List.of())
+            .store   (l -> List.of())
+            .delete  (l -> List.of())
+            .retrieve(l -> List.of())
             .catalog (l -> List.of(ShellCommand.of("sh", "-c", "printf '%s\\n' a b c")))
             .infuser (result -> new Line(""))
             .cataloger(result -> result.rows().stream()
@@ -106,13 +102,13 @@ class ShellRepositoryTest {
     void tabDelimitedParserSplitsColumns() throws ShazoException {
         record Row(String id, String name, String score) {}
 
-        Describer<Row> describer = Describer.<Row>builder()
-            .contains(r -> List.of(NoOpCommand.INSTANCE))
-            .store   (r -> List.of(NoOpCommand.INSTANCE))
-            .delete  (r -> List.of(NoOpCommand.INSTANCE))
+        Describer<Row, ShellCommand> describer = Describer.<Row, ShellCommand>builder()
+            .contains(r -> List.of())
+            .store   (r -> List.of())
+            .delete  (r -> List.of())
             .retrieve(r -> List.of(ShellCommand.of("sh", "-c",
                 "printf '42\\tAlice\\t99.5'")))
-            .catalog (r -> List.of(NoOpCommand.INSTANCE))
+            .catalog (r -> List.of())
             .infuser(result -> result.first().map(row -> new Row(
                 (String) row.get("id"),
                 (String) row.get("name"),
@@ -131,13 +127,13 @@ class ShellRepositoryTest {
     void tabDelimitedFillsMissingColumnsWithEmptyString() throws ShazoException {
         record Pair(String a, String b, String c) {}
 
-        Describer<Pair> describer = Describer.<Pair>builder()
-            .contains(p -> List.of(NoOpCommand.INSTANCE))
-            .store   (p -> List.of(NoOpCommand.INSTANCE))
-            .delete  (p -> List.of(NoOpCommand.INSTANCE))
+        Describer<Pair, ShellCommand> describer = Describer.<Pair, ShellCommand>builder()
+            .contains(p -> List.of())
+            .store   (p -> List.of())
+            .delete  (p -> List.of())
             .retrieve(p -> List.of(ShellCommand.of("sh", "-c",
                 "printf 'x\\ty'")))    // only 2 fields, 3 columns
-            .catalog (p -> List.of(NoOpCommand.INSTANCE))
+            .catalog (p -> List.of())
             .infuser(result -> result.first().map(row -> new Pair(
                 (String) row.get("a"),
                 (String) row.get("b"),
@@ -156,12 +152,12 @@ class ShellRepositoryTest {
 
     @Test
     void nonZeroExitCodeThrowsShazoException() {
-        Describer<Line> describer = Describer.<Line>builder()
-            .contains(l -> List.of(NoOpCommand.INSTANCE))
-            .store   (l -> List.of(NoOpCommand.INSTANCE))
-            .delete  (l -> List.of(NoOpCommand.INSTANCE))
+        Describer<Line, ShellCommand> describer = Describer.<Line, ShellCommand>builder()
+            .contains(l -> List.of())
+            .store   (l -> List.of())
+            .delete  (l -> List.of())
             .retrieve(l -> List.of(ShellCommand.of("sh", "-c", "exit 42")))
-            .catalog (l -> List.of(NoOpCommand.INSTANCE))
+            .catalog (l -> List.of())
             .infuser (result -> new Line(""))
             .cataloger(result -> List.of())
             .build();
@@ -174,13 +170,13 @@ class ShellRepositoryTest {
 
     @Test
     void nonExistentCommandThrowsShazoException() {
-        Describer<Line> describer = Describer.<Line>builder()
-            .contains(l -> List.of(NoOpCommand.INSTANCE))
-            .store   (l -> List.of(NoOpCommand.INSTANCE))
-            .delete  (l -> List.of(NoOpCommand.INSTANCE))
+        Describer<Line, ShellCommand> describer = Describer.<Line, ShellCommand>builder()
+            .contains(l -> List.of())
+            .store   (l -> List.of())
+            .delete  (l -> List.of())
             .retrieve(l -> List.of(ShellCommand.of(
                 "__no_such_command_shazo_test__")))
-            .catalog (l -> List.of(NoOpCommand.INSTANCE))
+            .catalog (l -> List.of())
             .infuser (result -> new Line(""))
             .cataloger(result -> List.of())
             .build();
@@ -188,24 +184,6 @@ class ShellRepositoryTest {
         var badRepo = new ShellRepository<>(describer);
         assertThatThrownBy(() -> badRepo.retrieve(new Line("x")))
             .isInstanceOf(ShazoException.class);
-    }
-
-    @Test
-    void sqlCommandThrowsShazoException() {
-        Describer<Line> describer = Describer.<Line>builder()
-            .contains(l -> List.of(NoOpCommand.INSTANCE))
-            .store   (l -> List.of(NoOpCommand.INSTANCE))
-            .delete  (l -> List.of(NoOpCommand.INSTANCE))
-            .retrieve(l -> List.of(SqlCommand.of("SELECT 1")))
-            .catalog (l -> List.of(NoOpCommand.INSTANCE))
-            .infuser (result -> new Line(""))
-            .cataloger(result -> List.of())
-            .build();
-
-        var sqlRepo = new ShellRepository<>(describer);
-        assertThatThrownBy(() -> sqlRepo.retrieve(new Line("x")))
-            .isInstanceOf(ShazoException.class)
-            .hasMessageContaining("SqlCommand");
     }
 
     // ── LineParser factory ────────────────────────────────────────────────────

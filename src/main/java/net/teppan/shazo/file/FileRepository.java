@@ -1,8 +1,6 @@
 package net.teppan.shazo.file;
 
 import net.teppan.shazo.AbstractRepository;
-import net.teppan.shazo.Command;
-import net.teppan.shazo.NoOpCommand;
 import net.teppan.shazo.Describer;
 import net.teppan.shazo.RawResult;
 import net.teppan.shazo.ShazoException;
@@ -52,15 +50,16 @@ import java.util.Objects;
  * </tbody>
  * </table>
  *
- * <p>{@link net.teppan.shazo.jdbc.SqlCommand}, {@link net.teppan.shazo.shell.ShellCommand}, and any other unrecognised
- * command types are rejected with {@link ShazoException}.
- * {@link NoOpCommand} is skipped silently.
+ * <p>Because this repository is typed {@code AbstractRepository<T, FileCommand>},
+ * only {@link FileCommand} directives can reach {@link #execute(List)}; supplying
+ * a describer for any other command type is a compile-time error. An empty
+ * command list is a silent no-op.
  *
  * @param <T> the domain type managed by this repository
  * @see FileCommand
  * @see Describer
  */
-public final class FileRepository<T> extends AbstractRepository<T> {
+public final class FileRepository<T> extends AbstractRepository<T, FileCommand> {
 
     private static final Logger log = LoggerFactory.getLogger(FileRepository.class);
 
@@ -74,7 +73,7 @@ public final class FileRepository<T> extends AbstractRepository<T> {
      * @param describer     the describer for domain type {@code T}; never {@code null}
      * @throws UncheckedIOException if the directory cannot be created
      */
-    public FileRepository(Path baseDirectory, Describer<T> describer) {
+    public FileRepository(Path baseDirectory, Describer<T, FileCommand> describer) {
         super(describer);
         this.baseDirectory = Objects.requireNonNull(baseDirectory, "baseDirectory");
         try {
@@ -85,17 +84,14 @@ public final class FileRepository<T> extends AbstractRepository<T> {
     }
 
     @Override
-    protected RawResult execute(List<Command> commands) throws ShazoException {
+    protected RawResult execute(List<FileCommand> commands) throws ShazoException {
         var rows = new ArrayList<Map<String, Object>>();
         for (var command : commands) {
             switch (command) {
-                case NoOpCommand()           -> { /* skip */ }
-                case FileCommand.Write  w    -> executeWrite(w);
-                case FileCommand.Delete d    -> executeDelete(d);
-                case FileCommand.Read   r    -> rows.addAll(executeRead(r));
-                case FileCommand.List   l    -> rows.addAll(executeList(l));
-                default -> throw new ShazoException(
-                    "FileRepository: unsupported command type: " + command.getClass().getName());
+                case FileCommand.Write  w -> executeWrite(w);
+                case FileCommand.Delete d -> executeDelete(d);
+                case FileCommand.Read   r -> rows.addAll(executeRead(r));
+                case FileCommand.List   l -> rows.addAll(executeList(l));
             }
         }
         return RawResult.of(rows);

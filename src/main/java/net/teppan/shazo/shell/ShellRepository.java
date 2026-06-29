@@ -1,8 +1,6 @@
 package net.teppan.shazo.shell;
 
 import net.teppan.shazo.AbstractRepository;
-import net.teppan.shazo.Command;
-import net.teppan.shazo.NoOpCommand;
 import net.teppan.shazo.Describer;
 import net.teppan.shazo.RawResult;
 import net.teppan.shazo.ShazoException;
@@ -40,16 +38,16 @@ import java.util.stream.Collectors;
  *
  * <p>A non-zero exit code causes {@link #execute} to throw
  * {@link ShazoException} with the exit code and stderr content included in the
- * message.  {@code SqlCommand} commands are rejected with
- * {@link ShazoException} because this repository has no SQL runtime.
- * {@code NoOpCommand} is skipped silently.
+ * message.  Because this repository is typed
+ * {@code AbstractRepository<T, ShellCommand>}, only {@link ShellCommand}
+ * directives can reach it; an empty command list is a silent no-op.
  *
  * <h2>Basic example</h2>
  * <pre>{@code
- * Describer<LogEntry> describer = Describer.<LogEntry>builder()
- *     .contains(e -> List.of(NoOpCommand.INSTANCE))
- *     .store  (e -> List.of(NoOpCommand.INSTANCE))
- *     .delete (e -> List.of(NoOpCommand.INSTANCE))
+ * Describer<LogEntry, ShellCommand> describer = Describer.<LogEntry, ShellCommand>builder()
+ *     .contains(e -> List.of())
+ *     .store  (e -> List.of())
+ *     .delete (e -> List.of())
  *     .retrieve(e -> List.of(ShellCommand.of("grep", e.id(), "/var/log/app.log")))
  *     .catalog (e -> List.of(ShellCommand.of("tail", "-n", "100", "/var/log/app.log")))
  *     .infuser (result -> result.firstValue("line", Producer.asString())
@@ -71,7 +69,7 @@ import java.util.stream.Collectors;
  * @param <T> the domain type managed by this repository
  * @see LineParser
  */
-public final class ShellRepository<T> extends AbstractRepository<T> {
+public final class ShellRepository<T> extends AbstractRepository<T, ShellCommand> {
 
     private static final Logger log = LoggerFactory.getLogger(ShellRepository.class);
 
@@ -85,7 +83,7 @@ public final class ShellRepository<T> extends AbstractRepository<T> {
      *
      * @param describer the describer for domain type {@code T}; never {@code null}
      */
-    public ShellRepository(Describer<T> describer) {
+    public ShellRepository(Describer<T, ShellCommand> describer) {
         this(describer, LineParser.byLine(), null);
     }
 
@@ -97,7 +95,7 @@ public final class ShellRepository<T> extends AbstractRepository<T> {
      * @param lineParser the parser applied to each non-blank stdout line;
      *                   never {@code null}
      */
-    public ShellRepository(Describer<T> describer, LineParser lineParser) {
+    public ShellRepository(Describer<T, ShellCommand> describer, LineParser lineParser) {
         this(describer, lineParser, null);
     }
 
@@ -110,7 +108,7 @@ public final class ShellRepository<T> extends AbstractRepository<T> {
      * @param workingDirectory the working directory for launched processes;
      *                         {@code null} inherits the JVM's working directory
      */
-    public ShellRepository(Describer<T> describer, LineParser lineParser,
+    public ShellRepository(Describer<T, ShellCommand> describer, LineParser lineParser,
                            File workingDirectory) {
         super(describer);
         this.lineParser       = Objects.requireNonNull(lineParser, "lineParser");
@@ -118,31 +116,21 @@ public final class ShellRepository<T> extends AbstractRepository<T> {
     }
 
     /**
-     * Executes the given commands by launching external processes for each
-     * {@link ShellCommand}, skipping {@link net.teppan.shazo.NoOpCommand} silently,
-     * and throwing {@link ShazoException} for any unrecognised command type.
+     * Executes the given commands by launching one external process per
+     * {@link ShellCommand}. An empty list is a silent no-op.
      *
      * @param commands the commands to execute; never {@code null}
      * @return the aggregated stdout rows from all shell commands
-     * @throws ShazoException if any process exits with a non-zero code, fails to
-     *                        start, or an unsupported command type is encountered
+     * @throws ShazoException if any process exits with a non-zero code or fails
+     *                        to start
      */
     @Override
-    protected RawResult execute(List<Command> commands) throws ShazoException {
+    protected RawResult execute(List<ShellCommand> commands) throws ShazoException {
         var rows = new ArrayList<Map<String, Object>>();
-        for (var command : commands) {
-            switch (command) {
-                case NoOpCommand() -> {
-                    // skip silently
-                }
-                case ShellCommand shell -> {
-                    log.debug("Shell: {} {}", shell.executable(),
-                              String.join(" ", shell.arguments()));
-                    rows.addAll(runShell(shell));
-                }
-                default -> throw new ShazoException(
-                    "ShellRepository: unsupported command type: " + command.getClass().getName());
-            }
+        for (var shell : commands) {
+            log.debug("Shell: {} {}", shell.executable(),
+                      String.join(" ", shell.arguments()));
+            rows.addAll(runShell(shell));
         }
         return RawResult.of(rows);
     }

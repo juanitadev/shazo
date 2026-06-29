@@ -1,8 +1,6 @@
 package net.teppan.shazo.jdbc;
 
 import net.teppan.shazo.AbstractRepository;
-import net.teppan.shazo.Command;
-import net.teppan.shazo.NoOpCommand;
 import net.teppan.shazo.Describer;
 import net.teppan.shazo.RawResult;
 import net.teppan.shazo.ShazoException;
@@ -35,7 +33,7 @@ import java.util.Objects;
  * <pre>{@code
  * DataSource ds = ...; // HikariCP, etc.
  *
- * Describer<Person> describer = Describer.<Person>builder()
+ * Describer<Person, SqlCommand> describer = Describer.<Person, SqlCommand>builder()
  *     .contains(p  -> List.of(SqlCommand.of("SELECT 1 FROM person WHERE id = ?", p.id())))
  *     .store(p     -> List.of(SqlCommand.of(
  *         "MERGE INTO person (id, name, age) VALUES (?, ?, ?)", p.id(), p.name(), p.age())))
@@ -69,7 +67,7 @@ import java.util.Objects;
  * @see Describer
  * @see StorageTask
  */
-public final class JdbcRepository<T> extends AbstractRepository<T> {
+public final class JdbcRepository<T> extends AbstractRepository<T, SqlCommand> {
 
     private static final Logger log = LoggerFactory.getLogger(JdbcRepository.class);
 
@@ -81,7 +79,7 @@ public final class JdbcRepository<T> extends AbstractRepository<T> {
      * @param dataSource the JDBC data source; never {@code null}
      * @param describer  the describer for domain type {@code T}; never {@code null}
      */
-    public JdbcRepository(DataSource dataSource, Describer<T> describer) {
+    public JdbcRepository(DataSource dataSource, Describer<T, SqlCommand> describer) {
         super(describer);
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     }
@@ -89,7 +87,7 @@ public final class JdbcRepository<T> extends AbstractRepository<T> {
     // ── Core execution ───────────────────────────────────────────────────────
 
     @Override
-    protected RawResult execute(List<Command> commands) throws ShazoException {
+    protected RawResult execute(List<SqlCommand> commands) throws ShazoException {
         try (var conn = dataSource.getConnection()) {
             return executeOnConnection(conn, commands);
         } catch (ShazoException e) {
@@ -138,19 +136,12 @@ public final class JdbcRepository<T> extends AbstractRepository<T> {
 
     // ── Internal SQL execution (package-accessible for BoundJdbcRepository) ─
 
-    static RawResult executeOnConnection(Connection conn, List<Command> commands)
+    static RawResult executeOnConnection(Connection conn, List<SqlCommand> commands)
             throws ShazoException {
         var rows = new ArrayList<Map<String, Object>>();
-        for (var command : commands) {
-            switch (command) {
-                case NoOpCommand() -> { /* skip */ }
-                case SqlCommand sql -> {
-                    log.debug("SQL: {}", sql.statement());
-                    rows.addAll(runSql(conn, sql));
-                }
-                default -> throw new ShazoException(
-                    "JdbcRepository: unsupported command type: " + command.getClass().getName());
-            }
+        for (var sql : commands) {
+            log.debug("SQL: {}", sql.statement());
+            rows.addAll(runSql(conn, sql));
         }
         return RawResult.of(rows);
     }

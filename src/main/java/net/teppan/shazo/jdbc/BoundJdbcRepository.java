@@ -1,7 +1,6 @@
 package net.teppan.shazo.jdbc;
 
 import net.teppan.shazo.AbstractRepository;
-import net.teppan.shazo.Command;
 import net.teppan.shazo.Describer;
 import net.teppan.shazo.RawResult;
 import net.teppan.shazo.ShazoException;
@@ -18,17 +17,17 @@ import java.util.List;
  * through the {@link StorageTask} parameter, which is the only appropriate
  * scope for it.
  */
-final class BoundJdbcRepository<T> extends AbstractRepository<T> {
+final class BoundJdbcRepository<T> extends AbstractRepository<T, SqlCommand> {
 
     private final Connection connection;
 
-    BoundJdbcRepository(Connection connection, Describer<T> describer) {
+    BoundJdbcRepository(Connection connection, Describer<T, SqlCommand> describer) {
         super(describer);
         this.connection = connection;
     }
 
     @Override
-    protected RawResult execute(List<Command> commands) throws ShazoException {
+    protected RawResult execute(List<SqlCommand> commands) throws ShazoException {
         return JdbcRepository.executeOnConnection(connection, commands);
     }
 }

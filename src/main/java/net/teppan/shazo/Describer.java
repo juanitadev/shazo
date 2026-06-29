@@ -10,9 +10,17 @@ import java.util.function.Function;
  * together with the {@link Infuser}, {@link Cataloger}, and {@link Verifier}
  * that interpret the resulting {@link RawResult}.
  *
+ * <p>The command type {@code C} is fixed at compile time, so a describer is
+ * bound to a single storage backend: a {@code Describer<T, SqlCommand>} can
+ * only drive a JDBC repository, a {@code Describer<T, FileCommand>} only a
+ * file-system repository, and so on. Mismatches are caught by the compiler
+ * rather than at runtime.
+ *
+ * <p>An operation that requires no storage action returns an empty list.
+ *
  * <h2>Creating a Describer via the builder</h2>
  * <pre>{@code
- * Describer<Person> d = Describer.<Person>builder()
+ * Describer<Person, SqlCommand> d = Describer.<Person, SqlCommand>builder()
  *     .contains(p  -> List.of(SqlCommand.of(
  *         "SELECT 1 FROM person WHERE id = ?", p.id())))
  *     .store(p     -> List.of(SqlCommand.of(
@@ -36,11 +44,12 @@ import java.util.function.Function;
  * }</pre>
  *
  * @param <T> the domain type described
+ * @param <C> the storage command type this describer produces
  * @see Repository
  * @see Command
  * @see #builder()
  */
-public interface Describer<T> {
+public interface Describer<T, C extends Command> {
 
     /**
      * Returns commands that verify whether {@code query} exists in storage.
@@ -48,43 +57,43 @@ public interface Describer<T> {
      * {@link Repository#contains} returns {@code true}.
      *
      * @param query the query object
-     * @return commands to execute; never {@code null}
+     * @return commands to execute; never {@code null}; empty for a no-op
      */
-    List<Command> containsCommands(T query);
+    List<C> containsCommands(T query);
 
     /**
      * Returns commands that persist {@code entity} in storage.
      *
      * @param entity the entity to store
-     * @return commands to execute; never {@code null}
+     * @return commands to execute; never {@code null}; empty for a no-op
      */
-    List<Command> storeCommands(T entity);
+    List<C> storeCommands(T entity);
 
     /**
      * Returns commands that remove the entity described by {@code entity}
      * from storage.
      *
      * @param entity the entity to delete
-     * @return commands to execute; never {@code null}
+     * @return commands to execute; never {@code null}; empty for a no-op
      */
-    List<Command> deleteCommands(T entity);
+    List<C> deleteCommands(T entity);
 
     /**
      * Returns commands that retrieve an entity matching {@code query}.
      *
      * @param query the query object
-     * @return commands to execute; never {@code null}
+     * @return commands to execute; never {@code null}; empty for a no-op
      */
-    List<Command> retrieveCommands(T query);
+    List<C> retrieveCommands(T query);
 
     /**
      * Returns commands that fetch a collection of entities matching
      * {@code query}.
      *
      * @param query the query object; may act as filter criteria
-     * @return commands to execute; never {@code null}
+     * @return commands to execute; never {@code null}; empty for a no-op
      */
-    List<Command> catalogCommands(T query);
+    List<C> catalogCommands(T query);
 
     /**
      * Returns the {@link Infuser} used to construct a single result entity
@@ -115,12 +124,13 @@ public interface Describer<T> {
     // ── Builder ──────────────────────────────────────────────────────────────
 
     /**
-     * Returns a new {@link Builder} for constructing a {@code Describer<T>}.
+     * Returns a new {@link Builder} for constructing a {@code Describer<T, C>}.
      *
      * @param <T> the domain type
+     * @param <C> the storage command type
      * @return a fresh builder instance
      */
-    static <T> Builder<T> builder() {
+    static <T, C extends Command> Builder<T, C> builder() {
         return new Builder<>();
     }
 
@@ -131,14 +141,15 @@ public interface Describer<T> {
      * {@link Verifier#nonEmpty()}).
      *
      * @param <T> the domain type
+     * @param <C> the storage command type
      */
-    final class Builder<T> {
+    final class Builder<T, C extends Command> {
 
-        private Function<T, List<Command>> containsFn;
-        private Function<T, List<Command>> storeFn;
-        private Function<T, List<Command>> deleteFn;
-        private Function<T, List<Command>> retrieveFn;
-        private Function<T, List<Command>> catalogFn;
+        private Function<T, List<C>> containsFn;
+        private Function<T, List<C>> storeFn;
+        private Function<T, List<C>> deleteFn;
+        private Function<T, List<C>> retrieveFn;
+        private Function<T, List<C>> catalogFn;
         private Infuser<T> infuser;
         private Cataloger<T> cataloger;
         private Verifier verifier = Verifier.nonEmpty();
@@ -151,7 +162,7 @@ public interface Describer<T> {
          * @param fn the generator; never {@code null}
          * @return this builder
          */
-        public Builder<T> contains(Function<T, List<Command>> fn) {
+        public Builder<T, C> contains(Function<T, List<C>> fn) {
             this.containsFn = Objects.requireNonNull(fn, "contains");
             return this;
         }
@@ -162,7 +173,7 @@ public interface Describer<T> {
          * @param fn the generator; never {@code null}
          * @return this builder
          */
-        public Builder<T> store(Function<T, List<Command>> fn) {
+        public Builder<T, C> store(Function<T, List<C>> fn) {
             this.storeFn = Objects.requireNonNull(fn, "store");
             return this;
         }
@@ -173,7 +184,7 @@ public interface Describer<T> {
          * @param fn the generator; never {@code null}
          * @return this builder
          */
-        public Builder<T> delete(Function<T, List<Command>> fn) {
+        public Builder<T, C> delete(Function<T, List<C>> fn) {
             this.deleteFn = Objects.requireNonNull(fn, "delete");
             return this;
         }
@@ -184,7 +195,7 @@ public interface Describer<T> {
          * @param fn the generator; never {@code null}
          * @return this builder
          */
-        public Builder<T> retrieve(Function<T, List<Command>> fn) {
+        public Builder<T, C> retrieve(Function<T, List<C>> fn) {
             this.retrieveFn = Objects.requireNonNull(fn, "retrieve");
             return this;
         }
@@ -195,7 +206,7 @@ public interface Describer<T> {
          * @param fn the generator; never {@code null}
          * @return this builder
          */
-        public Builder<T> catalog(Function<T, List<Command>> fn) {
+        public Builder<T, C> catalog(Function<T, List<C>> fn) {
             this.catalogFn = Objects.requireNonNull(fn, "catalog");
             return this;
         }
@@ -206,7 +217,7 @@ public interface Describer<T> {
          * @param infuser the infuser; never {@code null}
          * @return this builder
          */
-        public Builder<T> infuser(Infuser<T> infuser) {
+        public Builder<T, C> infuser(Infuser<T> infuser) {
             this.infuser = Objects.requireNonNull(infuser, "infuser");
             return this;
         }
@@ -217,7 +228,7 @@ public interface Describer<T> {
          * @param cataloger the cataloger; never {@code null}
          * @return this builder
          */
-        public Builder<T> cataloger(Cataloger<T> cataloger) {
+        public Builder<T, C> cataloger(Cataloger<T> cataloger) {
             this.cataloger = Objects.requireNonNull(cataloger, "cataloger");
             return this;
         }
@@ -229,7 +240,7 @@ public interface Describer<T> {
          * @param verifier the verifier; never {@code null}
          * @return this builder
          */
-        public Builder<T> verifier(Verifier verifier) {
+        public Builder<T, C> verifier(Verifier verifier) {
             this.verifier = Objects.requireNonNull(verifier, "verifier");
             return this;
         }
@@ -237,10 +248,10 @@ public interface Describer<T> {
         /**
          * Builds an immutable {@link Describer}.
          *
-         * @return a new {@code Describer<T>}
+         * @return a new {@code Describer<T, C>}
          * @throws IllegalStateException if any required field has not been set
          */
-        public Describer<T> build() {
+        public Describer<T, C> build() {
             requireSet(containsFn, "contains");
             requireSet(storeFn,    "store");
             requireSet(deleteFn,   "delete");
@@ -255,14 +266,14 @@ public interface Describer<T> {
             var inf = infuser; var cat = cataloger; var ver = verifier;
 
             return new Describer<>() {
-                @Override public List<Command> containsCommands(T q) { return c.apply(q); }
-                @Override public List<Command> storeCommands(T e)    { return s.apply(e); }
-                @Override public List<Command> deleteCommands(T e)   { return d.apply(e); }
-                @Override public List<Command> retrieveCommands(T q) { return r.apply(q); }
-                @Override public List<Command> catalogCommands(T q)  { return g.apply(q); }
-                @Override public Infuser<T>    infuser()             { return inf; }
-                @Override public Cataloger<T>  cataloger()           { return cat; }
-                @Override public Verifier      verifier()            { return ver; }
+                @Override public List<C> containsCommands(T q) { return c.apply(q); }
+                @Override public List<C> storeCommands(T e)    { return s.apply(e); }
+                @Override public List<C> deleteCommands(T e)   { return d.apply(e); }
+                @Override public List<C> retrieveCommands(T q) { return r.apply(q); }
+                @Override public List<C> catalogCommands(T q)  { return g.apply(q); }
+                @Override public Infuser<T>    infuser()       { return inf; }
+                @Override public Cataloger<T>  cataloger()     { return cat; }
+                @Override public Verifier      verifier()      { return ver; }
             };
         }
 

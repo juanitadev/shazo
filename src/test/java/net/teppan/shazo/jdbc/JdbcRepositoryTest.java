@@ -1,7 +1,5 @@
 package net.teppan.shazo.jdbc;
 
-import net.teppan.shazo.Command;
-import net.teppan.shazo.jdbc.SqlCommand;
 import net.teppan.shazo.Describer;
 import net.teppan.shazo.NotFoundException;
 import net.teppan.shazo.ShazoException;
@@ -51,7 +49,7 @@ class JdbcRepositoryTest {
         }
 
         // H2 returns column names in upper-case by default.
-        Describer<Person> describer = Describer.<Person>builder()
+        Describer<Person, SqlCommand> describer = Describer.<Person, SqlCommand>builder()
             .contains(p -> List.of(SqlCommand.of(
                 "SELECT 1 FROM person WHERE id = ?", p.id())))
             .store(p -> List.of(SqlCommand.of(
