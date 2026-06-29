@@ -56,6 +56,17 @@ publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
+            pom {
+                name = "Shazo"
+                description = "Object-persistence abstraction with JDBC, file, " +
+                    "shell, and HTTP backends behind a single typed repository contract."
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+            }
         }
     }
 }
