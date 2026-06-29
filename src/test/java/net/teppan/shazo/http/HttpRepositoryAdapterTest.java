@@ -65,7 +65,7 @@ class HttpRepositoryAdapterTest {
     @BeforeEach
     void setUp() throws Exception {
         var store   = new PersonStore();
-        var codec   = Codec.<Person>java();
+        var codec   = Codec.java(Person.class);
         var handler = new RepositoryRequestHandler<>(store, codec);
 
         // port 0 = OS picks an available port
@@ -148,8 +148,20 @@ class HttpRepositoryAdapterTest {
 
     @Test
     void javaCodecRoundtrips() throws ShazoException {
-        var codec  = Codec.<Person>java();
+        var codec  = Codec.java(Person.class);
         var person = new Person("id", "name");
         assertThat(codec.decode(codec.encode(person))).isEqualTo(person);
+    }
+
+    @Test
+    void javaCodecRejectsClassOutsideAllowlist() throws ShazoException {
+        // A payload whose top-level class is not on the allowlist must be rejected.
+        record Evil(String cmd) implements Serializable {}
+        var permissive = Codec.java(Evil.class);   // can encode Evil
+        byte[] payload = permissive.encode(new Evil("rm -rf /"));
+
+        var guarded = Codec.java(Person.class);     // only Person allowed
+        assertThatThrownBy(() -> guarded.decode(payload))
+            .isInstanceOf(ShazoException.class);
     }
 }

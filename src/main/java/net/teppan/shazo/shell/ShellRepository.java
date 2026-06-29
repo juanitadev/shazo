@@ -12,14 +12,12 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -152,18 +150,22 @@ public final class ShellRepository<T> extends AbstractRepository<T, ShellCommand
             throw new ShazoException("Failed to start process: " + args, e);
         }
 
-        // stdout is read on a virtual thread so that the current thread can
-        // drain stderr concurrently — without this, a process that fills its
-        // stdout OS buffer while we block on stderr will deadlock.
-        var stdoutFuture = CompletableFuture.supplyAsync(() -> {
+        // stdout is read on a dedicated virtual thread so that the current
+        // thread can drain stderr concurrently — without this, a process that
+        // fills its stdout OS buffer while we block on stderr will deadlock.
+        // A bare virtual thread (rather than an Executor) avoids leaking an
+        // executor per invocation.
+        var stdoutHolder = new AtomicReference<List<String>>(List.of());
+        var stdoutError  = new AtomicReference<IOException>();
+        var stdoutThread = Thread.ofVirtual().name("shazo-shell-stdout").start(() -> {
             try (var reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(),
                                          StandardCharsets.UTF_8))) {
-                return reader.lines().toList();
+                stdoutHolder.set(reader.lines().toList());
             } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                stdoutError.set(e);
             }
-        }, Executors.newVirtualThreadPerTaskExecutor());
+        });
 
         String stderr;
         try (var reader = new BufferedReader(
@@ -174,18 +176,19 @@ public final class ShellRepository<T> extends AbstractRepository<T, ShellCommand
             throw new ShazoException("Failed to read stderr from: " + args, e);
         }
 
-        int          exitCode;
-        List<String> stdoutLines;
+        int exitCode;
         try {
-            exitCode    = process.waitFor();
-            stdoutLines = stdoutFuture.join();
+            exitCode = process.waitFor();
+            stdoutThread.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             process.destroyForcibly();
             throw new ShazoException("Process interrupted: " + args, e);
-        } catch (UncheckedIOException e) {
-            throw new ShazoException("Failed to read stdout from: " + args, e.getCause());
         }
+        if (stdoutError.get() != null) {
+            throw new ShazoException("Failed to read stdout from: " + args, stdoutError.get());
+        }
+        List<String> stdoutLines = stdoutHolder.get();
 
         if (exitCode != 0) {
             var msg = "Process exited with code " + exitCode + ": " + args;

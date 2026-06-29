@@ -32,7 +32,7 @@ import java.util.Optional;
  * <h2>Example</h2>
  * <pre>{@code
  * URI endpoint = URI.create("http://host:8080/api/persons");
- * Codec<Person> codec = Codec.java();
+ * Codec<Person> codec = Codec.java(Person.class);
  *
  * try (var repo = new HttpRepositoryAdapter<>(endpoint, codec)) {
  *     repo.store(new Person("42", "Alice"));

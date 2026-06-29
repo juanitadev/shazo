@@ -31,7 +31,7 @@ import java.util.Objects;
  * <pre>{@code
  * // In a ServletContextListener or embedded server setup:
  * Repository<Person> repo  = new JdbcRepository<>(dataSource, personDescriber);
- * Codec<Person>      codec = Codec.java();
+ * Codec<Person>      codec = Codec.java(Person.class);
  * var servlet = new HttpRepositoryServlet<>(repo, codec);
  *
  * ServletRegistration.Dynamic reg =
