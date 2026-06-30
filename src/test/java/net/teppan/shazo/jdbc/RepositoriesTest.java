@@ -137,6 +137,21 @@ class RepositoriesTest {
     }
 
     @Test
+    void repositoryByType_returnsAStorageAgnosticHandle() throws ShazoException {
+        transactor.execute(uow -> {
+            // Obtain a Repository<Widget> by domain type only — no command type named.
+            var widgetRepo = repos.in(uow).repository(Widget.class);
+            widgetRepo.store(new Widget("w9", "Nine"));
+            return null;
+        });
+        transactor.execute(uow -> {
+            assertThat(repos.in(uow).repository(Widget.class).retrieve(new Widget("w9", null)))
+                .map(Widget::name).contains("Nine");
+            return null;
+        });
+    }
+
+    @Test
     void registryReportsHandledTypes() {
         assertThat(repos.handles(Widget.class)).isTrue();
         assertThat(repos.types()).containsExactlyInAnyOrder(Widget.class, Gadget.class);

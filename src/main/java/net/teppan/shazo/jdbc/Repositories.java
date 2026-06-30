@@ -1,6 +1,7 @@
 package net.teppan.shazo.jdbc;
 
 import net.teppan.shazo.Describer;
+import net.teppan.shazo.Repository;
 import net.teppan.shazo.ShazoException;
 
 import java.util.LinkedHashMap;
@@ -118,6 +119,19 @@ public final class Repositories {
         private InTransaction(Repositories registry, UnitOfWork uow) {
             this.registry = registry;
             this.uow = uow;
+        }
+
+        /**
+         * Returns a transaction-scoped repository for the registered type — the
+         * storage-agnostic handle, without naming the describer's command type.
+         *
+         * @param type the domain type; never {@code null}
+         * @param <T>  the domain type
+         * @return a repository bound to this transaction
+         * @throws IllegalArgumentException if the type is not registered
+         */
+        public <T> Repository<T> repository(Class<T> type) {
+            return uow.repository(registry.describerFor(type));
         }
 
         /**
