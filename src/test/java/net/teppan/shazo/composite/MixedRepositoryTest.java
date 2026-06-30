@@ -98,15 +98,15 @@ class MixedRepositoryTest {
         primary.store(new Widget("2", "B"));
         secondary.store(new Widget("3", "C"));
 
-        var all = mixed.catalog(new Widget(null, null));
+        var all = mixed.gather(new Widget(null, null));
         assertThat(all).hasSize(2);
     }
 
-    // ── retrieveRequired ─────────────────────────────────────────────────────
+    // ── find ─────────────────────────────────────────────────────
 
     @Test
-    void retrieveRequiredThrowsNotFoundExceptionWhenAbsentFromPrimary() {
-        assertThatThrownBy(() -> mixed.retrieveRequired(new Widget("missing", null)))
+    void findThrowsNotFoundExceptionWhenAbsentFromPrimary() {
+        assertThatThrownBy(() -> mixed.find(new Widget("missing", null)))
             .isInstanceOf(NotFoundException.class);
     }
 

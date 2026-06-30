@@ -1,6 +1,8 @@
 package net.teppan.shazo.cache;
 
+import net.teppan.shazo.MultipleFoundException;
 import net.teppan.shazo.NotFoundException;
+import net.teppan.shazo.RawResult;
 import net.teppan.shazo.Repository;
 import net.teppan.shazo.ShazoException;
 
@@ -33,7 +35,7 @@ import java.util.function.Function;
  *       the cache entry for the stored entity.</li>
  *   <li>{@code delete} — delegates to the underlying repository; invalidates
  *       the cache entry.</li>
- *   <li>{@code catalog} — always delegates; results are not cached.</li>
+ *   <li>{@code catalog} / {@code gather} — always delegate; results are not cached.</li>
  * </ul>
  *
  * <h2>Example</h2>
@@ -134,14 +136,18 @@ public final class CacheRepository<T> implements Repository<T>, AutoCloseable {
     }
 
     @Override
-    public T retrieveRequired(T query) throws ShazoException, NotFoundException {
-        return retrieve(query).orElseThrow(
-            () -> new NotFoundException(query.toString()));
+    public T find(T query) throws ShazoException, NotFoundException, MultipleFoundException {
+        return delegate.find(query);   // strict check (incl. uniqueness) lives at the delegate
     }
 
     @Override
-    public List<T> catalog(T query) throws ShazoException {
+    public RawResult catalog(T query) throws ShazoException {
         return delegate.catalog(query);
+    }
+
+    @Override
+    public List<T> gather(T query) throws ShazoException {
+        return delegate.gather(query);
     }
 
     // ── Cache management ─────────────────────────────────────────────────────

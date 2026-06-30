@@ -56,7 +56,7 @@ import java.util.stream.Collectors;
  *     .catalog (e -> List.of(ShellCommand.of("tail", "-n", "100", "/var/log/app.log")))
  *     .infuser (result -> result.firstValue("line", Producer.asString())
  *         .map(LogEntry::parse).orElseThrow())
- *     .cataloger(result -> result.rows().stream()
+ *     .gatherer(result -> result.rows().stream()
  *         .map(row -> LogEntry.parse((String) row.get("line"))).toList())
  *     .build();
  *

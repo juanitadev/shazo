@@ -1,6 +1,8 @@
 package net.teppan.shazo.http;
 
+import net.teppan.shazo.MultipleFoundException;
 import net.teppan.shazo.NotFoundException;
+import net.teppan.shazo.RawResult;
 import net.teppan.shazo.Repository;
 import net.teppan.shazo.ShazoException;
 import net.teppan.shazo.http.internal.Protocol;
@@ -126,15 +128,36 @@ public final class HttpRepositoryAdapter<T> implements Repository<T>, AutoClosea
         }
     }
 
+    /**
+     * Finds the entity matching {@code query}, throwing {@link NotFoundException}
+     * if none exists. Note: the HTTP {@code retrieve} op returns a single object,
+     * so uniqueness is not checked over the wire — this method never throws
+     * {@link MultipleFoundException}. Strict uniqueness is enforced by repositories
+     * with direct query access (e.g. a server-side {@code JdbcRepository}).
+     */
     @Override
-    public T retrieveRequired(T query) throws ShazoException, NotFoundException {
+    public T find(T query) throws ShazoException, NotFoundException {
         return retrieve(query).orElseThrow(
             () -> new NotFoundException(query.toString()));
     }
 
+    /**
+     * Not supported over the HTTP transport: the wire protocol carries typed
+     * objects via the {@code Codec}, not raw rows. Use {@link #gather(Object)}.
+     *
+     * @param query ignored
+     * @return never returns
+     * @throws UnsupportedOperationException always
+     */
     @Override
-    public List<T> catalog(T query) throws ShazoException {
-        log.debug("catalog → {}", endpoint);
+    public RawResult catalog(T query) {
+        throw new UnsupportedOperationException(
+            "Raw catalog is not supported over the HTTP transport; use gather(query)");
+    }
+
+    @Override
+    public List<T> gather(T query) throws ShazoException {
+        log.debug("gather → {}", endpoint);
         byte[] body = buildRequest(Protocol.OP_CATALOG, query);
         byte[] resp = post(body);
         try {

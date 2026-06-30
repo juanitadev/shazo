@@ -40,12 +40,9 @@ class ShellRepositoryTest {
             .catalog (l -> List.of(ShellCommand.of("sh", "-c",
                 "printf '%s\\n' " + l.text())))
             // infuser: first non-blank stdout line → Line
-            .infuser(result -> result.firstValue("line", Producer.asString())
+            .infuser(result -> result.primary().firstValue("line", Producer.asString())
                 .map(Line::new).orElseThrow())
-            // cataloger: each line → Line
-            .cataloger(result -> result.rows().stream()
-                .map(row -> new Line((String) row.get("line")))
-                .toList())
+            // gatherer: each line → Line
             .build();
 
         repo = new ShellRepository<>(describer);
@@ -69,7 +66,6 @@ class ShellRepositoryTest {
             .retrieve(l -> List.of(ShellCommand.of("sh", "-c", "true")))
             .catalog (l -> List.of(ShellCommand.of("sh", "-c", "true")))
             .infuser(result -> new Line(""))
-            .cataloger(result -> List.of())
             .build();
 
         var emptyRepo = new ShellRepository<>(noOutputDescriber);
@@ -88,12 +84,12 @@ class ShellRepositoryTest {
             .retrieve(l -> List.of())
             .catalog (l -> List.of(ShellCommand.of("sh", "-c", "printf '%s\\n' a b c")))
             .infuser (result -> new Line(""))
-            .cataloger(result -> result.rows().stream()
-                .map(row -> new Line((String) row.get("line")))
-                .toList())
             .build();
 
-        var lines = new ShellRepository<>(multiDescriber).catalog(new Line("ignored"));
+        // Lines are not keyed entities, so this is a tabular read: catalog the
+        // rows and map them (gather = catalog-keys + retrieve-each does not apply).
+        var lines = new ShellRepository<>(multiDescriber).catalog(new Line("ignored"))
+            .rows().stream().map(row -> new Line((String) row.get("line"))).toList();
         assertThat(lines).containsExactly(new Line("a"), new Line("b"), new Line("c"));
     }
 
@@ -110,11 +106,10 @@ class ShellRepositoryTest {
             .retrieve(r -> List.of(ShellCommand.of("sh", "-c",
                 "printf '42\\tAlice\\t99.5'")))
             .catalog (r -> List.of())
-            .infuser(result -> result.first().map(row -> new Row(
+            .infuser(result -> result.primary().first().map(row -> new Row(
                 (String) row.get("id"),
                 (String) row.get("name"),
                 (String) row.get("score"))).orElseThrow())
-            .cataloger(result -> List.of())
             .build();
 
         var tabRepo = new ShellRepository<>(describer,
@@ -135,11 +130,10 @@ class ShellRepositoryTest {
             .retrieve(p -> List.of(ShellCommand.of("sh", "-c",
                 "printf 'x\\ty'")))    // only 2 fields, 3 columns
             .catalog (p -> List.of())
-            .infuser(result -> result.first().map(row -> new Pair(
+            .infuser(result -> result.primary().first().map(row -> new Pair(
                 (String) row.get("a"),
                 (String) row.get("b"),
                 (String) row.get("c"))).orElseThrow())
-            .cataloger(result -> List.of())
             .build();
 
         var tabRepo = new ShellRepository<>(describer,
@@ -160,7 +154,6 @@ class ShellRepositoryTest {
             .retrieve(l -> List.of(ShellCommand.of("sh", "-c", "exit 42")))
             .catalog (l -> List.of())
             .infuser (result -> new Line(""))
-            .cataloger(result -> List.of())
             .build();
 
         var failingRepo = new ShellRepository<>(describer);
@@ -178,7 +171,6 @@ class ShellRepositoryTest {
             .retrieve(l -> List.of(ShellCommand.of("sh", "-c", "sleep 10")))
             .catalog (l -> List.of())
             .infuser (result -> new Line(""))
-            .cataloger(result -> List.of())
             .build();
 
         var repo = new ShellRepository<>(describer,
@@ -194,7 +186,7 @@ class ShellRepositoryTest {
         Describer<Line, ShellCommand> describer = Describer.<Line, ShellCommand>builder()
             .contains(l -> List.of()).store(l -> List.of()).delete(l -> List.of())
             .retrieve(l -> List.of()).catalog(l -> List.of())
-            .infuser(result -> new Line("")).cataloger(result -> List.of())
+            .infuser(result -> new Line(""))
             .build();
 
         assertThatThrownBy(() -> new ShellRepository<>(describer,
@@ -212,7 +204,6 @@ class ShellRepositoryTest {
                 "__no_such_command_shazo_test__")))
             .catalog (l -> List.of())
             .infuser (result -> new Line(""))
-            .cataloger(result -> List.of())
             .build();
 
         var badRepo = new ShellRepository<>(describer);

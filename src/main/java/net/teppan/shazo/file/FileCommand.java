@@ -85,7 +85,7 @@ public sealed interface FileCommand extends Command
      * <p>The row maps produced by {@code rowParser} are collected into
      * {@link RawResult}; keys and value types are determined by the
      * {@code rowParser} and must align with what the {@link net.teppan.shazo.Describer}'s
-     * {@link net.teppan.shazo.Cataloger} expects.
+     * {@link net.teppan.shazo.Infuser} expects.
      *
      * @param glob      glob pattern for file names; never {@code null}
      * @param rowParser converts raw file text to a row map; never {@code null}

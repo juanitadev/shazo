@@ -1,6 +1,7 @@
 package net.teppan.shazo.jdbc;
 
 import net.teppan.shazo.Describer;
+import net.teppan.shazo.MultipleFoundException;
 import net.teppan.shazo.NotFoundException;
 import net.teppan.shazo.ShazoException;
 import org.h2.jdbcx.JdbcDataSource;
@@ -61,17 +62,12 @@ class JdbcRepositoryTest {
                 "SELECT id, name, age FROM person WHERE id = ?", p.id())))
             .catalog(p -> List.of(SqlCommand.of(
                 "SELECT id, name, age FROM person ORDER BY name")))
-            .infuser(result -> result.first().map(row -> new Person(
+            .key(row -> new Person((String) row.get("ID"), null, 0))
+            .infuser(result -> result.primary().first().map(row -> new Person(
                 (String) row.get("ID"),
                 (String) row.get("NAME"),
                 ((Number) row.get("AGE")).intValue()
             )).orElseThrow())
-            .cataloger(result -> result.rows().stream()
-                .map(row -> new Person(
-                    (String) row.get("ID"),
-                    (String) row.get("NAME"),
-                    ((Number) row.get("AGE")).intValue()
-                )).toList())
             .build();
 
         repo = new JdbcRepository<>(dataSource, describer);
@@ -122,21 +118,46 @@ class JdbcRepositoryTest {
         assertThat(result).contains(new Person("1", "Alice-Updated", 31));
     }
 
-    // ── retrieveRequired ─────────────────────────────────────────────────────
+    // ── find ─────────────────────────────────────────────────────
 
     @Test
-    void retrieveRequiredThrowsNotFoundExceptionWhenAbsent() {
-        assertThatThrownBy(() -> repo.retrieveRequired(new Person("missing", null, 0)))
+    void findThrowsNotFoundExceptionWhenAbsent() {
+        assertThatThrownBy(() -> repo.find(new Person("missing", null, 0)))
             .isInstanceOf(NotFoundException.class)
             .hasMessageContaining("No entity found");
     }
 
     @Test
-    void retrieveRequiredReturnsEntityWhenPresent() throws ShazoException, NotFoundException {
+    void findReturnsEntityWhenPresent() throws ShazoException, NotFoundException {
         var bob = new Person("2", "Bob", 25);
         repo.store(bob);
 
-        assertThat(repo.retrieveRequired(new Person("2", null, 0))).isEqualTo(bob);
+        assertThat(repo.find(new Person("2", null, 0))).isEqualTo(bob);
+    }
+
+    @Test
+    void findThrowsMultipleFoundWhenAmbiguous() throws ShazoException {
+        // A describer whose retrieve key is a non-unique column (name).
+        Describer<Person, SqlCommand> byName = Describer.<Person, SqlCommand>builder()
+            .contains(p -> List.of(SqlCommand.of("SELECT 1 FROM person WHERE name = ?", p.name())))
+            .store(p   -> List.of(SqlCommand.of(
+                "MERGE INTO person (id, name, age) VALUES (?, ?, ?)", p.id(), p.name(), p.age())))
+            .delete(p  -> List.of(SqlCommand.of("DELETE FROM person WHERE id = ?", p.id())))
+            .retrieve(p -> List.of(SqlCommand.of(
+                "SELECT id, name, age FROM person WHERE name = ?", p.name())))
+            .catalog(p -> List.of(SqlCommand.of("SELECT id, name FROM person WHERE name = ?", p.name())))
+            .key(row -> new Person((String) row.get("ID"), (String) row.get("NAME"), 0))
+            .infuser(r -> r.primary().first().map(row -> new Person(
+                (String) row.get("ID"), (String) row.get("NAME"),
+                ((Number) row.get("AGE")).intValue())).orElseThrow())
+            .build();
+        var byNameRepo = new JdbcRepository<>(dataSource, byName);
+        byNameRepo.store(new Person("1", "Dup", 30));
+        byNameRepo.store(new Person("2", "Dup", 40));
+
+        assertThatThrownBy(() -> byNameRepo.find(new Person(null, "Dup", 0)))
+            .isInstanceOf(MultipleFoundException.class)
+            .hasMessageContaining("found 2");
     }
 
     // ── delete ────────────────────────────────────────────────────────────────
@@ -158,11 +179,11 @@ class JdbcRepositoryTest {
     // ── catalog ───────────────────────────────────────────────────────────────
 
     @Test
-    void catalogReturnsAllStoredEntities() throws ShazoException {
+    void gatherReturnsAllStoredEntities() throws ShazoException {
         repo.store(new Person("1", "Alice", 30));
         repo.store(new Person("2", "Bob", 25));
 
-        var results = repo.catalog(new Person(null, null, 0));
+        var results = repo.gather(new Person(null, null, 0));
         assertThat(results)
             .hasSize(2)
             .containsExactly(
@@ -171,8 +192,26 @@ class JdbcRepositoryTest {
     }
 
     @Test
-    void catalogReturnsEmptyListWhenNoEntities() throws ShazoException {
-        assertThat(repo.catalog(new Person(null, null, 0))).isEmpty();
+    void gatherReturnsEmptyListWhenNoEntities() throws ShazoException {
+        assertThat(repo.gather(new Person(null, null, 0))).isEmpty();
+    }
+
+    @Test
+    void catalogReturnsTheRawTableWithoutMaterializingObjects() throws ShazoException {
+        repo.store(new Person("1", "Alice", 30));
+        repo.store(new Person("2", "Bob", 25));
+
+        var table = repo.catalog(new Person(null, null, 0));
+        assertThat(table.size()).isEqualTo(2);
+        // Named, case-insensitive columns — no Person objects created.
+        assertThat(table.rows().getFirst().get("name")).isEqualTo("Alice");
+        assertThat(table.rows().getFirst().get("NAME")).isEqualTo("Alice");
+        assertThat(((Number) table.rows().getFirst().get("age")).intValue()).isEqualTo(30);
+    }
+
+    @Test
+    void catalogReturnsEmptyTableWhenNoRows() throws ShazoException {
+        assertThat(repo.catalog(new Person(null, null, 0)).isEmpty()).isTrue();
     }
 
     // ── transact ─────────────────────────────────────────────────────────────
@@ -185,7 +224,7 @@ class JdbcRepositoryTest {
             return null;
         });
 
-        assertThat(repo.catalog(new Person(null, null, 0))).hasSize(2);
+        assertThat(repo.gather(new Person(null, null, 0))).hasSize(2);
     }
 
     @Test
@@ -195,7 +234,7 @@ class JdbcRepositoryTest {
             throw new ShazoException("simulated failure");
         })).isInstanceOf(ShazoException.class);
 
-        assertThatThrownBy(() -> repo.retrieveRequired(new Person("1", null, 0)))
+        assertThatThrownBy(() -> repo.find(new Person("1", null, 0)))
             .isInstanceOf(NotFoundException.class);
     }
 
@@ -204,7 +243,7 @@ class JdbcRepositoryTest {
         repo.store(new Person("1", "Alice", 30));
 
         int count = repo.transact(r -> {
-            var result = r.catalog(new Person(null, null, 0));
+            var result = r.gather(new Person(null, null, 0));
             return result.size();
         });
 

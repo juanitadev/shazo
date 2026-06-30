@@ -1,5 +1,6 @@
 package net.teppan.shazo.async;
 
+import net.teppan.shazo.RawResult;
 import net.teppan.shazo.Repository;
 import net.teppan.shazo.ShazoException;
 
@@ -150,16 +151,51 @@ public final class AsyncRepository<T> implements AutoCloseable {
     }
 
     /**
-     * Asynchronously retrieves all entities matching {@code query}.
+     * Asynchronously finds the unique entity matching {@code query}.
+     *
+     * @param query the query object
+     * @return a future that completes with the single match, or fails with a
+     *         {@link CompletionException} wrapping {@code NotFoundException} /
+     *         {@code MultipleFoundException}
+     */
+    public CompletableFuture<T> find(T query) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return delegate.find(query);
+            } catch (ShazoException e) {
+                throw new CompletionException(e);
+            }
+        }, executor);
+    }
+
+    /**
+     * Asynchronously fetches all rows matching {@code query} as a raw table.
+     *
+     * @param query the query/filter object
+     * @return a future that completes with the matching rows in table form,
+     *         or fails with a {@link CompletionException}
+     */
+    public CompletableFuture<RawResult> catalog(T query) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return delegate.catalog(query);
+            } catch (ShazoException e) {
+                throw new CompletionException(e);
+            }
+        }, executor);
+    }
+
+    /**
+     * Asynchronously gathers all entities matching {@code query} into a list.
      *
      * @param query the query/filter object
      * @return a future that completes with an immutable list of matches,
      *         or fails with a {@link CompletionException}
      */
-    public CompletableFuture<List<T>> catalog(T query) {
+    public CompletableFuture<List<T>> gather(T query) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                return delegate.catalog(query);
+                return delegate.gather(query);
             } catch (ShazoException e) {
                 throw new CompletionException(e);
             }

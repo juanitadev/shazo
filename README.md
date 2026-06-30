@@ -9,7 +9,7 @@ storage (a `Describer` that emits typed commands), so the same domain code can b
 backed by a relational database in production and a directory of files in a test,
 without changing a line of business logic.
 
-> **Status:** early release (`0.1.4`). The core API is stable and fully tested,
+> **Status:** early release (`0.1.5`). The core API is stable and fully tested,
 > but minor breaking changes are still possible before `1.0.0`.
 
 ## Requirements
@@ -19,21 +19,31 @@ without changing a line of business logic.
 
 ## The core contract
 
-Every backend implements the same five-operation interface:
+Every backend implements the same interface:
 
 ```java
 public interface Repository<T> {
-    boolean      contains(T query)         throws ShazoException;
-    void         store(T entity)           throws ShazoException;
-    void         delete(T entity)          throws ShazoException;
-    Optional<T>  retrieve(T query)         throws ShazoException;
-    T            retrieveRequired(T query) throws ShazoException, NotFoundException;
-    List<T>      catalog(T query)          throws ShazoException;
+    boolean      contains(T query)  throws ShazoException;
+    void         store(T entity)    throws ShazoException;
+    void         delete(T entity)   throws ShazoException;
+    Optional<T>  retrieve(T query)  throws ShazoException;  // lenient: first match or empty
+    T            find(T query)      throws ShazoException;  // strict: the unique match, or NotFound / MultipleFound
+    List<T>      gather(T query)    throws ShazoException;  // the matching entities
+    RawResult    catalog(T query)   throws ShazoException;  // the matching rows, as a table
 }
 ```
 
 The same domain object doubles as the query: pass a sparsely-populated instance
 (e.g. only the id) to look something up.
+
+Two read shapes, deliberately distinct:
+
+- **`catalog`** returns the result as a **table** (`RawResult` of named-column rows)
+  — for consumers that are themselves tabular (a UI grid, a report, a CSV/JSON
+  export) and would only pay to re-flatten objects.
+- **`retrieve` / `find` / `gather`** return **objects**. `retrieve` leniently takes
+  the first match; `find` is strict (exactly one — else `NotFoundException` or
+  `MultipleFoundException`); `gather` returns all.
 
 ## How it fits together
 
@@ -46,10 +56,17 @@ JdbcRepository / FileRepository / ShellRepository / …
 
 Describer<T, C extends Command>
    ├─ produces typed commands (SqlCommand / FileCommand / ShellCommand)
-   ├─ Infuser<T>   : RawResult → one entity
-   ├─ Cataloger<T> : RawResult → List<T>
-   └─ Verifier     : does a result count as "found"?
+   ├─ Infuser<T> : Results → one entity   (the sole object builder; assembles a
+   │               root and its children from per-command results — see below)
+   ├─ key        : a catalog row → a key-bearing query, so find/gather can
+   │               "catalog the keys, then retrieve each" (optional)
+   └─ Verifier   : does a result count as "found"?
 ```
+
+`retrieve`/`find` run the describer's commands, keep each command's rows under
+its `name` (a `Results`), and let the `Infuser` assemble the object. `gather`
+catalogs the matching keys and retrieves each; `find` catalogs, checks the count
+is exactly one, then retrieves.
 
 A `Describer` is parameterized by its command type `C`, so a
 `Describer<Memo, SqlCommand>` can only be paired with a JDBC repository and a
@@ -77,23 +94,27 @@ Describer<Person, SqlCommand> describer = Describer.<Person, SqlCommand>builder(
     .retrieve(p -> List.of(SqlCommand.of(
         "SELECT id, name, age FROM person WHERE id = ?", p.id())))
     .catalog(p  -> List.of(SqlCommand.of("SELECT id, name, age FROM person ORDER BY name")))
-    .infuser(r -> r.first().map(row -> new Person(
-        (String) row.get("id"), (String) row.get("name"),
-        ((Number) row.get("age")).intValue())).orElseThrow())
-    .cataloger(r -> r.rows().stream().map(row -> new Person(
-        (String) row.get("id"), (String) row.get("name"),
-        ((Number) row.get("age")).intValue())).toList())
+    .key(row    -> new Person((String) row.get("id"), null, 0))   // catalog row -> key query
+    .infuser(results -> {
+        var row = results.primary().first().orElseThrow();
+        return new Person((String) row.get("id"), (String) row.get("name"),
+                          ((Number) row.get("age")).intValue());
+    })
     .build();
 
 // 4. Use it
 var repo = new JdbcRepository<>(ds, describer);
 repo.store(new Person("1", "Alice", 30));
-Optional<Person> alice = repo.retrieve(new Person("1", null, 0));
-List<Person>     all   = repo.catalog(new Person(null, null, 0));
+Optional<Person> alice = repo.retrieve(new Person("1", null, 0));  // first match or empty
+Person           bob   = repo.find(new Person("2", null, 0));      // unique, or throws
+List<Person>     all   = repo.gather(new Person(null, null, 0));   // objects
+RawResult        table = repo.catalog(new Person(null, null, 0));  // rows, for a grid/report
 ```
 
 Column lookups in the infuser are **case-insensitive**, so `row.get("id")` works
-whether the driver reports `id`, `ID`, or `Id`.
+whether the driver reports `id`, `ID`, or `Id`. `find`/`gather` work by cataloging
+the matching keys and retrieving each, so a describer must declare `key(...)` to
+support them.
 
 ### Transactions
 
@@ -104,6 +125,31 @@ repo.transact(r -> {
     return null;        // commits on normal return, rolls back on exception
 });
 ```
+
+### Aggregates (1:N, 1:N:N) without joins
+
+A `retrieve` can run **several named commands** — a root and its children — and
+the `Infuser` assembles them from the per-command `Results`. Each relationship is
+its own query, so a deep object graph is built without a wide `JOIN` (and without
+the cartesian row explosion that joining several child collections causes):
+
+```java
+Describer.<Order, SqlCommand>builder()
+    // ...
+    .retrieve(o -> List.of(
+        SqlCommand.named("order", "SELECT * FROM orders WHERE id = ?", o.id()),
+        SqlCommand.named("lines", "SELECT * FROM order_line WHERE order_id = ?", o.id())))
+    .infuser(results -> {
+        var head  = results.of("order").first().orElseThrow();
+        var lines = results.of("lines").rows().stream().map(Line::from).toList();
+        return new Order((String) head.get("id"), ..., lines);
+    })
+    .key(row -> new Order((String) row.get("id"), null, List.of()))
+    .build();
+```
+
+Because `find` counts **entities** (one catalog row per entity), it never
+mistakes an aggregate's many child rows for "multiple found".
 
 ### Storing several types at once
 

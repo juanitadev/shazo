@@ -7,7 +7,7 @@ import java.util.function.Function;
 /**
  * Bridges a domain type {@code T} to a storage system by providing five
  * command-generation strategies — one per {@link Repository} operation —
- * together with the {@link Infuser}, {@link Cataloger}, and {@link Verifier}
+ * together with the {@link Infuser} and {@link Verifier}
  * that interpret the resulting {@link RawResult}.
  *
  * <p>The command type {@code C} is fixed at compile time, so a describer is
@@ -29,17 +29,14 @@ import java.util.function.Function;
  *         "DELETE FROM person WHERE id = ?", p.id())))
  *     .retrieve(p  -> List.of(SqlCommand.of(
  *         "SELECT id, name, age FROM person WHERE id = ?", p.id())))
- *     .catalog(p   -> List.of(SqlCommand.of(
+ *     .catalog(p   -> List.of(SqlCommand.of(   // the table; one row per entity
  *         "SELECT id, name, age FROM person ORDER BY name")))
- *     .infuser(result -> result.first().map(row -> new Person(
- *         (String) row.get("id"),
- *         (String) row.get("name"),
- *         ((Number) row.get("age")).intValue())).orElseThrow())
- *     .cataloger(result -> result.rows().stream()
- *         .map(row -> new Person(
- *             (String) row.get("id"),
- *             (String) row.get("name"),
- *             ((Number) row.get("age")).intValue())).toList())
+ *     .key(row     -> new Person((String) row.get("id"), null, 0))  // catalog row -> key query
+ *     .infuser(results -> {
+ *         var row = results.primary().first().orElseThrow();
+ *         return new Person((String) row.get("id"), (String) row.get("name"),
+ *                           ((Number) row.get("age")).intValue());
+ *     })
  *     .build();
  * }</pre>
  *
@@ -96,20 +93,34 @@ public interface Describer<T, C extends Command> {
     List<C> catalogCommands(T query);
 
     /**
-     * Returns the {@link Infuser} used to construct a single result entity
-     * from a {@link RawResult}.
+     * Returns the {@link Infuser} that assembles one entity (root plus any
+     * children) from the per-command {@link Results} of a {@code retrieve}.
      *
      * @return the infuser; never {@code null}
      */
     Infuser<T> infuser();
 
     /**
-     * Returns the {@link Cataloger} used to build a list result from a
-     * {@link RawResult}.
+     * Returns the key extractor that turns one row of a {@link #catalogCommands}
+     * result — which yields the matching primary keys — into a key-bearing query
+     * object suitable for {@link Repository#retrieve}.
      *
-     * @return the cataloger; never {@code null}
+     * <p>This is what lets {@link Repository#gather} and {@link Repository#find}
+     * "catalog the keys, then retrieve each": for a record, return a sparse
+     * instance with only the key fields set, e.g.
+     * {@code row -> new Order((String) row.get("id"), null, ...)}. It is the
+     * modern, non-invasive replacement for the original framework's
+     * {@code Gatherable.setFindKey} — the knowledge lives in the describer, not
+     * in the domain type.
+     *
+     * <p>Optional: a describer that does not support {@code find}/{@code gather}
+     * (it has no meaningful key — like the original framework's non-{@code
+     * Gatherable} objects) may return {@code null}, in which case those
+     * operations raise {@link UnsupportedOperationException}.
+     *
+     * @return the key extractor, or {@code null} if find/gather are unsupported
      */
-    Cataloger<T> cataloger();
+    java.util.function.Function<java.util.Map<String, Object>, T> key();
 
     /**
      * Returns the {@link Verifier} used by {@link Repository#contains}.
@@ -136,7 +147,7 @@ public interface Describer<T, C extends Command> {
 
     /**
      * Fluent builder for a {@link Describer}.
-     * All five command generators, the {@code infuser}, and the {@code cataloger}
+     * All five command generators, the {@code infuser}, and the {@code key}
      * are required; {@link #verifier} is optional (defaults to
      * {@link Verifier#nonEmpty()}).
      *
@@ -151,7 +162,7 @@ public interface Describer<T, C extends Command> {
         private Function<T, List<C>> retrieveFn;
         private Function<T, List<C>> catalogFn;
         private Infuser<T> infuser;
-        private Cataloger<T> cataloger;
+        private Function<java.util.Map<String, Object>, T> key;
         private Verifier verifier = Verifier.nonEmpty();
 
         private Builder() {}
@@ -223,13 +234,15 @@ public interface Describer<T, C extends Command> {
         }
 
         /**
-         * Sets the {@link Cataloger} for multi-entity retrieval.
+         * Sets the key extractor that turns a {@code catalog} (primary-key) row
+         * into a key-bearing query object, enabling {@link Repository#gather} and
+         * {@link Repository#find} to retrieve each match.
          *
-         * @param cataloger the cataloger; never {@code null}
+         * @param key the key extractor; never {@code null}
          * @return this builder
          */
-        public Builder<T, C> cataloger(Cataloger<T> cataloger) {
-            this.cataloger = Objects.requireNonNull(cataloger, "cataloger");
+        public Builder<T, C> key(Function<java.util.Map<String, Object>, T> key) {
+            this.key = Objects.requireNonNull(key, "key");
             return this;
         }
 
@@ -258,12 +271,12 @@ public interface Describer<T, C extends Command> {
             requireSet(retrieveFn, "retrieve");
             requireSet(catalogFn,  "catalog");
             requireSet(infuser,    "infuser");
-            requireSet(cataloger,  "cataloger");
+            // key is optional: only describers that support find/gather need it.
 
             // capture finals for the anonymous class
             var c = containsFn; var s = storeFn; var d = deleteFn;
             var r = retrieveFn; var g = catalogFn;
-            var inf = infuser; var cat = cataloger; var ver = verifier;
+            var inf = infuser; var k = key; var ver = verifier;
 
             return new Describer<>() {
                 @Override public List<C> containsCommands(T q) { return c.apply(q); }
@@ -272,7 +285,7 @@ public interface Describer<T, C extends Command> {
                 @Override public List<C> retrieveCommands(T q) { return r.apply(q); }
                 @Override public List<C> catalogCommands(T q)  { return g.apply(q); }
                 @Override public Infuser<T>    infuser()       { return inf; }
-                @Override public Cataloger<T>  cataloger()     { return cat; }
+                @Override public java.util.function.Function<java.util.Map<String, Object>, T> key() { return k; }
                 @Override public Verifier      verifier()      { return ver; }
             };
         }

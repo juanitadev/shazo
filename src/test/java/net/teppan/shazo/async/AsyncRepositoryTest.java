@@ -78,7 +78,7 @@ class AsyncRepositoryTest {
         async.store(new Note("1", "a")).get();
         async.store(new Note("2", "b")).get();
 
-        var all = async.catalog(new Note(null, null)).get();
+        var all = async.gather(new Note(null, null)).get();
         assertThat(all).hasSize(2);
     }
 

@@ -111,7 +111,7 @@ class CacheRepositoryTest {
         backing.store(new Item("1", "a"));
         backing.store(new Item("2", "b"));
 
-        var all = cache.catalog(new Item(null, null));
+        var all = cache.gather(new Item(null, null));
 
         assertThat(all).hasSize(2);
     }
@@ -145,11 +145,11 @@ class CacheRepositoryTest {
         assertThat(cache.size()).isEqualTo(1);
     }
 
-    // ── retrieveRequired ──────────────────────────────────────────────────────
+    // ── find ──────────────────────────────────────────────────────
 
     @Test
-    void retrieveRequiredThrowsNotFoundExceptionWhenAbsent() {
-        assertThatThrownBy(() -> cache.retrieveRequired(new Item("missing", null)))
+    void findThrowsNotFoundExceptionWhenAbsent() {
+        assertThatThrownBy(() -> cache.find(new Item("missing", null)))
             .isInstanceOf(NotFoundException.class);
     }
 }

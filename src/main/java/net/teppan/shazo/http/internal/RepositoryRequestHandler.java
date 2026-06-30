@@ -106,7 +106,7 @@ public final class RepositoryRequestHandler<T> {
                     }
                 }
                 case Protocol.OP_CATALOG -> {
-                    var results = repository.catalog(codec.decode(payload));
+                    var results = repository.gather(codec.decode(payload));
                     out.writeByte(Protocol.STATUS_OK);
                     out.writeInt(results.size());
                     for (var item : results) {

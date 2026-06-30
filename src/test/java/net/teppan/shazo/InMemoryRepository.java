@@ -47,12 +47,19 @@ public class InMemoryRepository<T> implements Repository<T> {
     }
 
     @Override
-    public T retrieveRequired(T query) throws ShazoException, NotFoundException {
+    public T find(T query) throws ShazoException, NotFoundException {
+        // One entry per key, so a match is always unique; only absence can occur.
         return retrieve(query).orElseThrow(() -> new NotFoundException(query.toString()));
     }
 
     @Override
-    public List<T> catalog(T ignored) throws ShazoException {
+    public RawResult catalog(T ignored) {
+        // This test double stores objects, not rows; raw catalog is not meaningful.
+        throw new UnsupportedOperationException("InMemoryRepository does not support raw catalog");
+    }
+
+    @Override
+    public List<T> gather(T ignored) throws ShazoException {
         return List.copyOf(store.values());
     }
 

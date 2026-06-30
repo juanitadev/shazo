@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The five-operation persistence contract at the heart of Shazo.
+ * The core persistence contract at the heart of Shazo.
  *
  * <p>All operations accept a domain object of type {@code T} and delegate
  * the translation to storage commands to a {@link Describer}. Implementations
@@ -27,16 +27,25 @@ import java.util.Optional;
  *       <td>Removes a matching entity; no-op if absent</td>
  *       <td>{@code void}</td></tr>
  *   <tr><td>{@code retrieve}</td>
- *       <td>Fetches a single entity; empty if not found</td>
+ *       <td>Leniently fetches one match (the first); empty if none</td>
  *       <td>{@code Optional<T>}</td></tr>
- *   <tr><td>{@code retrieveRequired}</td>
- *       <td>Fetches a single entity; throws if not found</td>
+ *   <tr><td>{@code find}</td>
+ *       <td>Strictly fetches the unique match; throws if none or several</td>
  *       <td>{@code T}</td></tr>
  *   <tr><td>{@code catalog}</td>
- *       <td>Fetches all matching entities</td>
+ *       <td>Fetches all matching rows as a raw table (no object mapping)</td>
+ *       <td>{@code RawResult}</td></tr>
+ *   <tr><td>{@code gather}</td>
+ *       <td>Fetches all matching entities, gathered into typed objects</td>
  *       <td>{@code List<T>}</td></tr>
  * </tbody>
  * </table>
+ *
+ * <p>{@code catalog} returns the result in table form — a {@link RawResult} of
+ * named-column rows — for callers that are themselves tabular (a UI grid, a
+ * report, a CSV/JSON export) and would only pay to re-flatten domain objects.
+ * {@code gather} runs the same query and builds objects by retrieving each
+ * matching key (via the describer's {@link Infuser}).
  *
  * @param <T> the domain type managed by this repository
  * @see Describer
@@ -81,26 +90,46 @@ public interface Repository<T> {
     Optional<T> retrieve(T query) throws ShazoException;
 
     /**
-     * Retrieves the entity matching {@code query}, throwing
-     * {@link NotFoundException} when none is found.
+     * Finds <em>the</em> unique entity matching {@code query}, treating both
+     * absence and ambiguity as errors. This is the strict, integrity-checking
+     * fetch for a key that should identify exactly one entity (a primary key, or
+     * a business key expected to be unique).
      *
-     * <p>Use this variant when absence is an error condition.
-     * Prefer {@link #retrieve} when absence is a normal outcome.
+     * <p>Contrast with {@link #retrieve}, which leniently returns the first match
+     * (or empty) and never complains about several. Use {@code find} when "more
+     * than one" would be a bug; use {@code retrieve}/{@link #gather} when several
+     * matches are acceptable.
      *
-     * @param query an object whose fields identify the entity to retrieve
-     * @return the matching entity; never {@code null}
-     * @throws NotFoundException if no matching entity exists
-     * @throws ShazoException    if the storage operation fails
+     * @param query an object whose fields identify the entity to find
+     * @return the single matching entity; never {@code null}
+     * @throws NotFoundException     if no matching entity exists
+     * @throws MultipleFoundException if more than one entity matches
+     * @throws ShazoException        if the storage operation fails
      */
-    T retrieveRequired(T query) throws ShazoException, NotFoundException;
+    T find(T query) throws ShazoException, NotFoundException, MultipleFoundException;
 
     /**
-     * Returns all entities matching {@code query} as an immutable list.
-     * Returns an empty list when no matches exist.
+     * Returns all rows matching {@code query} as a raw table, without mapping
+     * them to domain objects. Use this when the consumer is itself tabular (a UI
+     * grid, a report, a CSV/JSON export) and materializing — then re-flattening —
+     * domain objects would be wasted work. Returns an empty {@link RawResult}
+     * when no matches exist.
+     *
+     * @param query an object that serves as filter criteria
+     * @return the matching rows in table form; never {@code null}
+     * @throws ShazoException if the storage operation fails
+     */
+    RawResult catalog(T query) throws ShazoException;
+
+    /**
+     * Returns all entities matching {@code query} as an immutable list, by
+     * cataloging the matching keys and retrieving each into a typed object (so
+     * the describer must declare {@code key(...)}). Returns an empty list when no
+     * matches exist.
      *
      * @param query an object that serves as filter criteria
      * @return an immutable list of matching entities; never {@code null}
      * @throws ShazoException if the storage operation fails
      */
-    List<T> catalog(T query) throws ShazoException;
+    List<T> gather(T query) throws ShazoException;
 }

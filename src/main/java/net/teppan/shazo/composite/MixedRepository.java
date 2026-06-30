@@ -1,6 +1,8 @@
 package net.teppan.shazo.composite;
 
+import net.teppan.shazo.MultipleFoundException;
 import net.teppan.shazo.NotFoundException;
+import net.teppan.shazo.RawResult;
 import net.teppan.shazo.Repository;
 import net.teppan.shazo.ShazoException;
 
@@ -81,13 +83,18 @@ public final class MixedRepository<T> implements Repository<T> {
     }
 
     @Override
-    public T retrieveRequired(T query) throws ShazoException, NotFoundException {
-        return primary.retrieveRequired(query);
+    public T find(T query) throws ShazoException, NotFoundException, MultipleFoundException {
+        return primary.find(query);
     }
 
     @Override
-    public List<T> catalog(T query) throws ShazoException {
+    public RawResult catalog(T query) throws ShazoException {
         return primary.catalog(query);
+    }
+
+    @Override
+    public List<T> gather(T query) throws ShazoException {
+        return primary.gather(query);
     }
 
     // ── Write operations — fan-out to all ────────────────────────────────────

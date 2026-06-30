@@ -44,7 +44,7 @@ import java.util.Objects;
  *     .infuser(result -> result.first().map(row -> new Person(
  *         (String) row.get("ID"), (String) row.get("NAME"),
  *         ((Number) row.get("AGE")).intValue())).orElseThrow())
- *     .cataloger(result -> result.rows().stream()
+ *     .gatherer(result -> result.rows().stream()
  *         .map(row -> new Person(
  *             (String) row.get("ID"), (String) row.get("NAME"),
  *             ((Number) row.get("AGE")).intValue())).toList())

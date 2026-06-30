@@ -43,10 +43,9 @@ class RepositoriesTest {
             .delete(w   -> List.of(SqlCommand.of("DELETE FROM widget WHERE id = ?", w.id())))
             .retrieve(w -> List.of(SqlCommand.of("SELECT id, name FROM widget WHERE id = ?", w.id())))
             .catalog(w  -> List.of(SqlCommand.of("SELECT id, name FROM widget")))
-            .infuser(r  -> r.first().map(row -> new Widget(
+            .infuser(r  -> r.primary().first().map(row -> new Widget(
                 (String) row.get("id"), (String) row.get("name"))).orElseThrow())
-            .cataloger(r -> r.rows().stream().map(row -> new Widget(
-                (String) row.get("id"), (String) row.get("name"))).toList())
+            .key(row -> new Widget((String) row.get("id"), null))
             .build();
 
         Describer<Gadget, SqlCommand> gadgets = Describer.<Gadget, SqlCommand>builder()
@@ -56,10 +55,9 @@ class RepositoriesTest {
             .delete(g   -> List.of(SqlCommand.of("DELETE FROM gadget WHERE id = ?", g.id())))
             .retrieve(g -> List.of(SqlCommand.of("SELECT id, name FROM gadget WHERE id = ?", g.id())))
             .catalog(g  -> List.of(SqlCommand.of("SELECT id, name FROM gadget")))
-            .infuser(r  -> r.first().map(row -> new Gadget(
+            .infuser(r  -> r.primary().first().map(row -> new Gadget(
                 (String) row.get("id"), (String) row.get("name"))).orElseThrow())
-            .cataloger(r -> r.rows().stream().map(row -> new Gadget(
-                (String) row.get("id"), (String) row.get("name"))).toList())
+            .key(row -> new Gadget((String) row.get("id"), null))
             .build();
 
         repos = Repositories.builder()

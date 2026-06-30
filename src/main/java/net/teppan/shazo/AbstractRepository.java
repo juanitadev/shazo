@@ -1,5 +1,6 @@
 package net.teppan.shazo;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -78,21 +79,73 @@ public abstract class AbstractRepository<T, C extends Command> implements Reposi
 
     @Override
     public Optional<T> retrieve(T query) throws ShazoException {
-        var result = execute(describer.retrieveCommands(query));
-        if (!describer.verifier().verify(result)) return Optional.empty();
-        return Optional.of(describer.infuser().infuse(result));
+        // Each retrieve command (root, children, ...) is executed separately and
+        // its rows kept under the command's name; the infuser assembles them. The
+        // root (primary) being empty means "not found".
+        var results = executeEach(describer.retrieveCommands(query));
+        if (results.isEmpty()) return Optional.empty();
+        return Optional.of(describer.infuser().infuse(results));
     }
 
     @Override
-    public T retrieveRequired(T query) throws ShazoException, NotFoundException {
-        return retrieve(query).orElseThrow(
-            () -> new NotFoundException(query.toString()));
+    public T find(T query) throws ShazoException, NotFoundException, MultipleFoundException {
+        // Catalog yields one row per matching entity (its primary key), so the
+        // count is the entity count — correct even for aggregates whose retrieve
+        // joins children.
+        var key = requireKey();
+        var keyRows = catalog(query).rows();
+        if (keyRows.isEmpty()) {
+            throw new NotFoundException(query.toString());
+        }
+        if (keyRows.size() > 1) {
+            throw new MultipleFoundException(query.toString(), keyRows.size());
+        }
+        return retrieve(key.apply(keyRows.getFirst()))
+            .orElseThrow(() -> new NotFoundException(query.toString()));
     }
 
     @Override
-    public List<T> catalog(T query) throws ShazoException {
-        var result = execute(describer.catalogCommands(query));
-        return describer.cataloger().catalog(result);
+    public RawResult catalog(T query) throws ShazoException {
+        return execute(describer.catalogCommands(query));
+    }
+
+    @Override
+    public List<T> gather(T query) throws ShazoException {
+        // Catalog the matching keys, then retrieve each as a full object.
+        var key = requireKey();
+        var out = new ArrayList<T>();
+        for (var row : catalog(query).rows()) {
+            retrieve(key.apply(row)).ifPresent(out::add);
+        }
+        return out;
+    }
+
+    private java.util.function.Function<java.util.Map<String, Object>, T> requireKey() {
+        var key = describer.key();
+        if (key == null) {
+            throw new UnsupportedOperationException(
+                "This describer has no key(); find/gather are unsupported");
+        }
+        return key;
+    }
+
+    /**
+     * Executes each command separately and returns the per-command results keyed
+     * by {@link Command#name()}, so an aggregate {@code retrieve} can be assembled
+     * from a root and its children without a wide join. The default runs each
+     * command through {@link #execute(List)}; backends may override to run them on
+     * a single connection.
+     *
+     * @param commands the commands to execute, in order; never {@code null}
+     * @return the per-command results
+     * @throws ShazoException if any command fails
+     */
+    protected Results executeEach(List<C> commands) throws ShazoException {
+        var byName = new java.util.LinkedHashMap<String, RawResult>();
+        for (C command : commands) {
+            byName.put(command.name(), execute(List.of(command)));
+        }
+        return new Results(byName);
     }
 
     /**

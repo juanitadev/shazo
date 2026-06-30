@@ -1,8 +1,8 @@
 package net.teppan.shazo;
 
 /**
- * Thrown by {@link Repository#retrieveRequired} when no entity matching
- * the query exists in storage.
+ * Thrown by {@link Repository#find} when no entity matching the query exists
+ * in storage.
  *
  * <p>This exception is checked because a missing entity is a normal, expected
  * query outcome that callers are responsible for handling explicitly.
@@ -10,7 +10,7 @@ package net.teppan.shazo;
  * is equally valid as presence.
  *
  * @see Repository#retrieve
- * @see Repository#retrieveRequired
+ * @see Repository#find
  */
 public final class NotFoundException extends ShazoException {
 

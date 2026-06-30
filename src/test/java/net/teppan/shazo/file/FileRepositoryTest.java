@@ -38,11 +38,9 @@ class FileRepositoryTest {
             .delete  (d -> List.of(new FileCommand.Delete(file(d.id()))))
             .retrieve(d -> List.of(new FileCommand.Read(file(d.id()))))
             .catalog (d -> List.of(FileCommand.List.of("*.doc", FileRepositoryTest::parse)))
-            .infuser(result -> result.firstValue("_content", v -> (String) v)
+            .key(row -> new Doc((String) row.get("id"), null))
+            .infuser(result -> result.primary().firstValue("_content", v -> (String) v)
                 .map(FileRepositoryTest::decode).orElseThrow())
-            .cataloger(result -> result.rows().stream()
-                .map(row -> new Doc((String) row.get("id"), (String) row.get("body")))
-                .toList())
             .build();
         repo = new FileRepository<>(baseDir, describer);
     }
@@ -92,7 +90,7 @@ class FileRepositoryTest {
     void catalogListsStoredDocs() throws ShazoException {
         repo.store(new Doc("a", "x"));
         repo.store(new Doc("b", "y"));
-        assertThat(repo.catalog(new Doc(null, null)))
+        assertThat(repo.gather(new Doc(null, null)))
             .containsExactlyInAnyOrder(new Doc("a", "x"), new Doc("b", "y"));
     }
 

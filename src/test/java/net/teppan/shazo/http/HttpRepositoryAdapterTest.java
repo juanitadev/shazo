@@ -47,12 +47,17 @@ class HttpRepositoryAdapterTest {
         }
 
         @Override
-        public Person retrieveRequired(Person q) throws ShazoException, NotFoundException {
+        public Person find(Person q) throws ShazoException, NotFoundException {
             return retrieve(q).orElseThrow(() -> new NotFoundException(q.id()));
         }
 
         @Override
-        public List<Person> catalog(Person q) {
+        public net.teppan.shazo.RawResult catalog(Person q) {
+            throw new UnsupportedOperationException("not used in this test");
+        }
+
+        @Override
+        public List<Person> gather(Person q) {
             return List.copyOf(data.values());
         }
     }
@@ -117,8 +122,8 @@ class HttpRepositoryAdapterTest {
     }
 
     @Test
-    void retrieveRequiredThrowsNotFoundWhenAbsent() {
-        assertThatThrownBy(() -> adapter.retrieveRequired(new Person("ghost", null)))
+    void findThrowsNotFoundWhenAbsent() {
+        assertThatThrownBy(() -> adapter.find(new Person("ghost", null)))
             .isInstanceOf(NotFoundException.class);
     }
 
@@ -133,7 +138,7 @@ class HttpRepositoryAdapterTest {
     void catalogReturnsAllStoredEntities() throws ShazoException {
         adapter.store(new Person("a", "Alice"));
         adapter.store(new Person("b", "Bob"));
-        var result = adapter.catalog(new Person(null, null));
+        var result = adapter.gather(new Person(null, null));
         assertThat(result).containsExactlyInAnyOrder(
             new Person("a", "Alice"),
             new Person("b", "Bob"));
@@ -141,7 +146,7 @@ class HttpRepositoryAdapterTest {
 
     @Test
     void catalogReturnsEmptyWhenNoEntities() throws ShazoException {
-        assertThat(adapter.catalog(new Person(null, null))).isEmpty();
+        assertThat(adapter.gather(new Person(null, null))).isEmpty();
     }
 
     // ── Codec.java() ─────────────────────────────────────────────────────────

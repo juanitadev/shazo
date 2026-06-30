@@ -186,7 +186,34 @@ public final class Repositories {
         }
 
         /**
-         * Lists entities of the given type.
+         * Finds the unique entity of the given type, throwing if absent or
+         * ambiguous.
+         *
+         * @param type  the entity type; never {@code null}
+         * @param query a query entity carrying the key; never {@code null}
+         * @param <T>   the entity type
+         * @return the single matching entity
+         * @throws net.teppan.shazo.ShazoException if absent, ambiguous, or the read fails
+         */
+        public <T> T find(Class<T> type, T query) throws ShazoException {
+            return uow.repository(registry.describerFor(type)).find(query);
+        }
+
+        /**
+         * Fetches all rows of the given type as a raw table (no object mapping).
+         *
+         * @param type  the entity type; never {@code null}
+         * @param query a query entity; never {@code null}
+         * @param <T>   the entity type
+         * @return the matching rows in table form
+         * @throws net.teppan.shazo.ShazoException if the read fails
+         */
+        public <T> net.teppan.shazo.RawResult catalog(Class<T> type, T query) throws ShazoException {
+            return uow.repository(registry.describerFor(type)).catalog(query);
+        }
+
+        /**
+         * Gathers all entities of the given type into a list.
          *
          * @param type  the entity type; never {@code null}
          * @param query a query entity; never {@code null}
@@ -194,8 +221,8 @@ public final class Repositories {
          * @return the matching entities
          * @throws net.teppan.shazo.ShazoException if the read fails
          */
-        public <T> List<T> catalog(Class<T> type, T query) throws ShazoException {
-            return uow.repository(registry.describerFor(type)).catalog(query);
+        public <T> List<T> gather(Class<T> type, T query) throws ShazoException {
+            return uow.repository(registry.describerFor(type)).gather(query);
         }
 
         @SuppressWarnings("unchecked")
