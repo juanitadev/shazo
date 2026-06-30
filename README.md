@@ -9,12 +9,12 @@ storage (a `Describer` that emits typed commands), so the same domain code can b
 backed by a relational database in production and a directory of files in a test,
 without changing a line of business logic.
 
-> **Status:** early release (`0.1.5`). The core API is stable and fully tested,
+> **Status:** early release (`0.1.6`). The core API is stable and fully tested,
 > but minor breaking changes are still possible before `1.0.0`.
 
 ## Requirements
 
-- **Java 25+** (uses records, pattern-matching `switch`, and virtual threads)
+- **Java 21+** (uses records, pattern-matching `switch`, and virtual threads)
 - Build: Gradle (wrapper included)
 
 ## The core contract
@@ -246,6 +246,22 @@ SchemaManager.apply(dataSource, "net/teppan/myapp/schema/");
 
 `EmbeddedDataSource` provides H2 data sources (file, in-memory, server) with
 PostgreSQL-compatibility options preset.
+
+## Tenant-scoped connections
+
+`SessionInitDataSource` wraps a `DataSource` and runs initialization SQL on every
+borrowed connection — the seam for multi-tenant strategies that share a database:
+
+```java
+// schema-per-tenant: each connection is scoped to the tenant's schema
+DataSource acme = new SessionInitDataSource(shared, "SET SCHEMA acme");
+// row-level security: tag the session; the DB's RLS policies do the isolation
+DataSource acme = new SessionInitDataSource(shared, "SET app.current_tenant = 'acme'");
+```
+
+(Database-per-tenant needs no wrapper — just route the tenant to its own
+`DataSource`.) The `net.teppan.backbone` runtime builds on this for its
+`forTenant` / `withTenant` API.
 
 ## Build
 
