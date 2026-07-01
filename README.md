@@ -1,5 +1,11 @@
 # Shazo
 
+> [!IMPORTANT]
+> **Moved.** shazo now lives in the **[`sharaku`](https://github.com/juanitadevelopment/sharaku)**
+> monorepo (alongside `backbone`) and is released from there. This repository is
+> archived. Update your dependency coordinate to:
+> `com.github.juanitadevelopment.sharaku:shazo:0.2.0`
+
 A small object-persistence abstraction for Java. One repository interface, many
 storage backends — JDBC, the file system, external shell commands, and remote
 HTTP — behind a single typed contract.
