@@ -1,7 +1,9 @@
 package net.teppan.shazo.http;
 
 import com.sun.net.httpserver.HttpServer;
+import net.teppan.shazo.MultipleFoundException;
 import net.teppan.shazo.NotFoundException;
+import net.teppan.shazo.RawResult;
 import net.teppan.shazo.ShazoException;
 import net.teppan.shazo.http.internal.RepositoryRequestHandler;
 import org.junit.jupiter.api.*;
@@ -47,13 +49,35 @@ class HttpRepositoryAdapterTest {
         }
 
         @Override
-        public Person find(Person q) throws ShazoException, NotFoundException {
-            return retrieve(q).orElseThrow(() -> new NotFoundException(q.id()));
+        public Person find(Person q) throws ShazoException {
+            // id given → unique lookup; otherwise match by name (may be ambiguous),
+            // so the strict find contract (NotFound / MultipleFound) is exercised.
+            if (q.id() != null) {
+                return retrieve(q).orElseThrow(() -> new NotFoundException(q.id()));
+            }
+            var byName = data.values().stream()
+                .filter(p -> Objects.equals(p.name(), q.name())).toList();
+            if (byName.isEmpty()) throw new NotFoundException("name=" + q.name());
+            if (byName.size() > 1) throw new MultipleFoundException("name=" + q.name(), byName.size());
+            return byName.getFirst();
         }
 
         @Override
-        public net.teppan.shazo.RawResult catalog(Person q) {
-            throw new UnsupportedOperationException("not used in this test");
+        public RawResult catalog(Person q) {
+            // Emit a mix of scalar types to exercise the typed row codec.
+            var rows = new ArrayList<Map<String, Object>>();
+            for (Person p : data.values()) {
+                var row = new LinkedHashMap<String, Object>();
+                row.put("id", p.id());
+                row.put("name", p.name());
+                row.put("age", 42);
+                row.put("score", new java.math.BigDecimal("3.14"));
+                row.put("created", java.sql.Timestamp.valueOf("2026-07-01 12:00:00"));
+                row.put("avatar", new byte[]{1, 2, 3});
+                row.put("nickname", null);
+                rows.add(row);
+            }
+            return RawResult.of(rows);
         }
 
         @Override
@@ -125,6 +149,44 @@ class HttpRepositoryAdapterTest {
     void findThrowsNotFoundWhenAbsent() {
         assertThatThrownBy(() -> adapter.find(new Person("ghost", null)))
             .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void findReturnsUniqueMatch() throws ShazoException {
+        adapter.store(new Person("1", "Alice"));
+        assertThat(adapter.find(new Person("1", null))).isEqualTo(new Person("1", "Alice"));
+    }
+
+    @Test
+    void findThrowsMultipleFoundOverTheWire() throws ShazoException {
+        // Two people share a name; a strict find by name must surface
+        // MultipleFoundException from the server, not silently pick one.
+        adapter.store(new Person("1", "Dup"));
+        adapter.store(new Person("2", "Dup"));
+        assertThatThrownBy(() -> adapter.find(new Person(null, "Dup")))
+            .isInstanceOf(MultipleFoundException.class);
+    }
+
+    @Test
+    void catalogRoundTripsTypedRows() throws ShazoException {
+        adapter.store(new Person("a", "Alice"));
+        RawResult table = adapter.catalog(new Person(null, null));
+
+        assertThat(table.size()).isEqualTo(1);
+        var row = table.first().orElseThrow();
+        assertThat(row.get("id")).isEqualTo("a");
+        assertThat(row.get("name")).isEqualTo("Alice");
+        assertThat(row.get("age")).isEqualTo(42);                       // Integer
+        assertThat(row.get("score")).isEqualTo(new java.math.BigDecimal("3.14"));
+        assertThat(row.get("created"))
+            .isEqualTo(java.sql.Timestamp.valueOf("2026-07-01 12:00:00"));
+        assertThat((byte[]) row.get("avatar")).containsExactly(1, 2, 3);
+        assertThat(row.get("nickname")).isNull();
+    }
+
+    @Test
+    void catalogReturnsEmptyTableWhenNoEntities() throws ShazoException {
+        assertThat(adapter.catalog(new Person(null, null)).isEmpty()).isTrue();
     }
 
     @Test

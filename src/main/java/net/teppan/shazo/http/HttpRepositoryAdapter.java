@@ -6,6 +6,7 @@ import net.teppan.shazo.RawResult;
 import net.teppan.shazo.Repository;
 import net.teppan.shazo.ShazoException;
 import net.teppan.shazo.http.internal.Protocol;
+import net.teppan.shazo.http.internal.RowCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -129,36 +130,56 @@ public final class HttpRepositoryAdapter<T> implements Repository<T>, AutoClosea
     }
 
     /**
-     * Finds the entity matching {@code query}, throwing {@link NotFoundException}
-     * if none exists. Note: the HTTP {@code retrieve} op returns a single object,
-     * so uniqueness is not checked over the wire — this method never throws
-     * {@link MultipleFoundException}. Strict uniqueness is enforced by repositories
-     * with direct query access (e.g. a server-side {@code JdbcRepository}).
+     * Finds the unique entity matching {@code query}. Unlike earlier versions,
+     * uniqueness is enforced <em>on the server</em>: the adapter invokes the
+     * remote repository's {@code find}, so this method faithfully throws
+     * {@link NotFoundException} when nothing matches and
+     * {@link MultipleFoundException} when several do — the strict contract holds
+     * across the wire.
      */
     @Override
-    public T find(T query) throws ShazoException, NotFoundException {
-        return retrieve(query).orElseThrow(
-            () -> new NotFoundException(query.toString()));
+    public T find(T query) throws ShazoException, NotFoundException, MultipleFoundException {
+        log.debug("find → {}", endpoint);
+        byte[] resp = post(buildRequest(Protocol.OP_FIND, query));
+        try {
+            var in = new DataInputStream(new ByteArrayInputStream(resp));
+            byte status = in.readByte();
+            if (status == Protocol.STATUS_NOT_FOUND) {
+                throw new NotFoundException(query.toString());
+            }
+            if (status == Protocol.STATUS_MULTIPLE_FOUND) {
+                throw new MultipleFoundException(query.toString(), in.readInt());
+            }
+            checkException(status, in);
+            return codec.decode(in.readAllBytes());
+        } catch (IOException e) {
+            throw new ShazoException("Failed to parse find response", e);
+        }
     }
 
     /**
-     * Not supported over the HTTP transport: the wire protocol carries typed
-     * objects via the {@code Codec}, not raw rows. Use {@link #gather(Object)}.
-     *
-     * @param query ignored
-     * @return never returns
-     * @throws UnsupportedOperationException always
+     * Catalogs the matching rows as a raw {@link RawResult} table. The server
+     * runs {@code catalog} and streams the rows back in a typed, scalar-only
+     * cell format (no Java object graph is deserialized), so the same tabular
+     * contract that a local {@code JdbcRepository} offers is available remotely.
      */
     @Override
-    public RawResult catalog(T query) {
-        throw new UnsupportedOperationException(
-            "Raw catalog is not supported over the HTTP transport; use gather(query)");
+    public RawResult catalog(T query) throws ShazoException {
+        log.debug("catalog → {}", endpoint);
+        byte[] resp = post(buildRequest(Protocol.OP_CATALOG, query));
+        try {
+            var in = new DataInputStream(new ByteArrayInputStream(resp));
+            checkException(in.readByte(), in);
+            return RowCodec.read(in);
+        } catch (IOException e) {
+            throw new ShazoException("Failed to parse catalog response", e);
+        }
     }
 
     @Override
     public List<T> gather(T query) throws ShazoException {
         log.debug("gather → {}", endpoint);
-        byte[] body = buildRequest(Protocol.OP_CATALOG, query);
+        byte[] body = buildRequest(Protocol.OP_GATHER, query);
         byte[] resp = post(body);
         try {
             var in = new DataInputStream(new ByteArrayInputStream(resp));
@@ -173,7 +194,7 @@ public final class HttpRepositoryAdapter<T> implements Repository<T>, AutoClosea
             }
             return List.copyOf(results);
         } catch (IOException e) {
-            throw new ShazoException("Failed to parse catalog response", e);
+            throw new ShazoException("Failed to parse gather response", e);
         }
     }
 

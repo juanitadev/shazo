@@ -9,7 +9,7 @@ storage (a `Describer` that emits typed commands), so the same domain code can b
 backed by a relational database in production and a directory of files in a test,
 without changing a line of business logic.
 
-> **Status:** early release (`0.1.6`). The core API is stable and fully tested,
+> **Status:** early release (`0.1.7`). The core API is stable and fully tested,
 > but minor breaking changes are still possible before `1.0.0`.
 
 ## Requirements
@@ -214,6 +214,15 @@ try (var async = new AsyncRepository<>(jdbcRepo)) {
 ```
 
 ### Remote HTTP
+
+The HTTP transport is **contract-transparent**: every `Repository<T>` method —
+`contains` / `store` / `delete` / `retrieve` / `find` / `gather` / `catalog` —
+works over the wire with the same semantics as a local repository. `find` runs
+on the server, so it still throws `NotFoundException` / `MultipleFoundException`;
+`catalog` streams raw rows back in a typed, scalar-only cell format (String,
+number, `Boolean`, `BigDecimal`, `byte[]`, SQL date/time) rather than a Java
+object graph — so a `RawResult` crosses the wire without ever deserializing an
+arbitrary object.
 
 The client and server share a `Codec`. The default Java-serialization codec is
 guarded by a deserialization **allowlist** — you must declare the permitted

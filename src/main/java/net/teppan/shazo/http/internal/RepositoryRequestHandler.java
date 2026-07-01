@@ -1,12 +1,13 @@
 package net.teppan.shazo.http.internal;
 
+import net.teppan.shazo.MultipleFoundException;
+import net.teppan.shazo.NotFoundException;
 import net.teppan.shazo.Repository;
 import net.teppan.shazo.ShazoException;
 import net.teppan.shazo.http.Codec;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Objects;
 
 /**
@@ -32,9 +33,12 @@ import java.util.Objects;
  *     STATUS_OK + OP_STORE     →  empty
  *     STATUS_OK + OP_DELETE    →  empty
  *     STATUS_OK + OP_RETRIEVE  →  codec.encode(T)
- *     STATUS_OK + OP_CATALOG   →  int32 count, then for each item:
+ *     STATUS_OK + OP_FIND      →  codec.encode(T)
+ *     STATUS_OK + OP_GATHER    →  int32 count, then for each item:
  *                                   int32 len, byte[len] codec.encode(item)
- *     STATUS_NOT_FOUND         →  empty
+ *     STATUS_OK + OP_CATALOG   →  RowCodec table (typed rows)
+ *     STATUS_NOT_FOUND         →  empty  (retrieve / find)
+ *     STATUS_MULTIPLE_FOUND    →  int32 match count  (find)
  *     STATUS_EXCEPTION         →  UTF-8 error message
  * </pre>
  *
@@ -105,7 +109,19 @@ public final class RepositoryRequestHandler<T> {
                         out.writeByte(Protocol.STATUS_NOT_FOUND);
                     }
                 }
-                case Protocol.OP_CATALOG -> {
+                case Protocol.OP_FIND -> {
+                    try {
+                        var result = repository.find(codec.decode(payload));
+                        out.writeByte(Protocol.STATUS_OK);
+                        out.write(codec.encode(result));
+                    } catch (NotFoundException e) {
+                        out.writeByte(Protocol.STATUS_NOT_FOUND);
+                    } catch (MultipleFoundException e) {
+                        out.writeByte(Protocol.STATUS_MULTIPLE_FOUND);
+                        out.writeInt(e.count());
+                    }
+                }
+                case Protocol.OP_GATHER -> {
                     var results = repository.gather(codec.decode(payload));
                     out.writeByte(Protocol.STATUS_OK);
                     out.writeInt(results.size());
@@ -114,6 +130,11 @@ public final class RepositoryRequestHandler<T> {
                         out.writeInt(encoded.length);
                         out.write(encoded);
                     }
+                }
+                case Protocol.OP_CATALOG -> {
+                    var table = repository.catalog(codec.decode(payload));
+                    out.writeByte(Protocol.STATUS_OK);
+                    RowCodec.write(out, table);
                 }
                 default -> writeException(out, "Unknown operation code: " + op);
             }
